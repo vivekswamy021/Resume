@@ -28,6 +28,7 @@ answer_types = [("Point-wise", "points"), ("Detailed", "detailed"), ("Key Points
 # Load environment variables from .env file
 load_dotenv()
 
+# Ensure GROQ_API_KEY is defined in your environment or .env file
 GROQ_API_KEY = os.getenv('GROQ_API_KEY')
 
 if not GROQ_API_KEY:
@@ -298,10 +299,12 @@ def dump_to_excel(parsed_json, filename):
                 
                 if isinstance(content, list):
                     for item in content:
-                        ws.append(["", str(item)])
+                        if item:
+                            ws.append(["", str(item)])
                 elif isinstance(content, dict):
                     for k, v in content.items():
-                        ws.append(["", f"{k.replace('_', ' ').title()}: {v}"])
+                        if v:
+                            ws.append(["", f"{k.replace('_', ' ').title()}: {v}"])
                 else:
                     ws.append(["", str(content)])
 
@@ -716,7 +719,7 @@ def admin_dashboard():
 
         if not st.session_state.resumes_to_analyze:
             st.info("Upload and parse resumes first to enable analysis.")
-            return
+            # Note: Do NOT return here if there are no JDs, let the JD check handle it.
 
         if not st.session_state.admin_jd_list:
             st.error("Please add at least one Job Description in the 'JD Management' tab before running an analysis.")
@@ -839,6 +842,7 @@ def admin_dashboard():
             # Display detailed analysis in expanders
             st.markdown("##### Detailed Reports")
             for item in results_df:
+                # Ensure the display reflects the extracted score/percentage, even if it's 'N/A' or 'Error'
                 header_text = f"Report for **{item['resume_name']}** against {item['jd_name']} (Score: **{item['overall_score']}/10** | S: **{item.get('skills_percent', 'N/A')}%** | E: **{item.get('experience_percent', 'N/A')}%** | Edu: **{item.get('education_percent', 'N/A')}%**)"
                 with st.expander(header_text):
                     st.markdown(item['full_analysis'])
