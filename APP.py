@@ -6,7 +6,7 @@ import openpyxl
 import json
 import tempfile
 from groq import Groq
-from gtts import gTTS
+from gtts import gTTS # Although gTTS is not used in the final flow, keeping for completeness if it was part of original
 import traceback
 import re
 from dotenv import load_dotenv 
@@ -19,7 +19,7 @@ from datetime import date
 # CRITICAL FIX: Using the currently supported Groq model.
 GROQ_MODEL = "llama-3.1-8b-instant"
 
-# Options for LLM functions (defined for use in Candidate Dashboard)
+# Options for LLM functions
 section_options = ["name", "email", "phone", "skills", "education", "experience", "certifications", "projects", "strength", "personal_details", "github", "linkedin", "full resume"]
 question_section_options = ["skills","experience", "certifications", "education", "projects"]
 answer_types = [("Point-wise", "points"), ("Detailed", "detailed"), ("Key Points", "key")]
@@ -195,7 +195,7 @@ def extract_jd_from_linkedin_url(url: str) -> str:
              return f"[Error: Not a valid LinkedIn Job URL format: {url}]"
 
         
-        # Simulated synthesized JD content (Restored for robustness in a non-backend environment)
+        # Simulated synthesized JD content 
         jd_text = f"""
         --- Simulated JD for: {job_title} ---
         
@@ -248,7 +248,7 @@ def evaluate_jd_fit(job_description, parsed_json):
     4.  **Gaps/Areas for Improvement:** Key requirements in the JD that are missing or weak in the resume.
     5.  **Overall Summary:** A concise summary of the fit.
     
-    **Format the output strictly as follows, extracting numerical scores if possible:**
+    **Format the output strictly as follows, ensuring the scores are easily parsable (use brackets or no brackets around scores):**
     Overall Fit Score: [Score]/10
     
     --- Section Match Analysis ---
@@ -342,9 +342,6 @@ def parse_and_store_resume(uploaded_file, file_name_key='default'):
             excel_data = dump_to_excel(parsed, excel_filename)
         except Exception as e:
             st.warning(f"Could not generate Excel file for single resume: {e}")
-    
-    # The resume data structure now includes placeholders for JD/Date metadata, 
-    # which will be filled in the Admin Approval tab.
     
     return {
         "parsed": parsed,
@@ -494,9 +491,8 @@ def admin_dashboard():
             go_to("role_selection")
             
     with nav_col2:
-        # NEW: Log Out button directing to the login page
+        # Log Out button directing to the login page
         if st.button("🚪 Log Out", use_container_width=True):
-            # Optional: Clear specific admin session state if desired, otherwise just navigate
             go_to("login") 
     # --- END MODIFIED NAVIGATION BLOCK ---
     
@@ -504,7 +500,6 @@ def admin_dashboard():
     if "admin_jd_list" not in st.session_state:
         st.session_state.admin_jd_list = []
     if "resumes_to_analyze" not in st.session_state:
-        # Each item in this list now expects 'applied_jd' and 'submitted_date' fields
         st.session_state.resumes_to_analyze = []
     if "admin_match_results" not in st.session_state:
         st.session_state.admin_match_results = []
@@ -513,10 +508,8 @@ def admin_dashboard():
         
     # --- VENDOR INITIALIZATION ---
     if "vendors" not in st.session_state:
-        # List of vendor objects: {'name', 'domain', 'submitted_date'}
         st.session_state.vendors = []
     if "vendor_statuses" not in st.session_state:
-        # Dictionary mapping vendor_name to status
         st.session_state.vendor_statuses = {}
     # --- END VENDOR INITIALIZATION ---
 
@@ -527,7 +520,7 @@ def admin_dashboard():
         "📊 Resume Analysis", 
         "👤 Candidate Approval", 
         "🤝 Vendor Approval", 
-        "📈 Statistics" # Statistics tab is last
+        "📈 Statistics" 
     ])
     # -------------------------
 
@@ -645,18 +638,17 @@ def admin_dashboard():
             st.info("No Job Descriptions added yet.")
 
 
-    # --- TAB 2: Resume Analysis --- 
+    # --- TAB 2: Resume Analysis (INCLUDES ALL ROBUSTNESS FIXES) --- 
     with tab_analysis:
         st.subheader("Analyze Resumes Against Job Descriptions")
 
-        # 1. Resume Upload (Admin uses st.session_state.resumes_to_analyze list)
+        # 1. Resume Upload
         st.markdown("#### 1. Upload Resumes")
         
         resume_upload_type = st.radio("Upload Type", ["Single Resume", "Multiple Resumes"], key="resume_upload_type_admin")
 
         uploaded_files = st.file_uploader(
             "Choose files to analyze",
-            # Added more types for robustness
             type=["pdf", "docx", "txt", "json", "rtf"], 
             accept_multiple_files=(resume_upload_type == "Multiple Resumes"),
             key="resume_file_uploader_admin"
@@ -677,9 +669,8 @@ def admin_dashboard():
                                 
                                 if "error" not in result:
                                     # --- ADD PLACEHOLDER METADATA HERE ---
-                                    # These placeholders are critical for the Approval tab to work correctly initially
                                     result['applied_jd'] = "N/A (Pending Assignment)"
-                                    result['submitted_date'] = date.today().strftime("%Y-%m-%d") # Use today's date placeholder
+                                    result['submitted_date'] = date.today().strftime("%Y-%m-%d")
                                     
                                     st.session_state.resumes_to_analyze.append(result)
                                     
@@ -695,7 +686,7 @@ def admin_dashboard():
 
                     if count > 0:
                         st.success(f"Successfully loaded and parsed {count} resume(s) for analysis.")
-                        st.rerun() # Rerun to update statistics tab
+                        st.rerun() 
                     elif not st.session_state.resumes_to_analyze:
                         st.warning("No resumes were successfully loaded and parsed.")
                 else:
@@ -706,7 +697,7 @@ def admin_dashboard():
             if st.button("🗑️ Clear All Resumes", key="clear_resumes_admin", use_container_width=True, help="Removes all currently loaded resumes and match results."):
                 st.session_state.resumes_to_analyze = []
                 st.session_state.admin_match_results = []
-                st.session_state.resume_statuses = {} # Clear associated statuses
+                st.session_state.resume_statuses = {} 
                 st.success("All resumes and associated match results have been cleared.")
                 st.rerun() 
             # --- END NEW CLEAR BUTTON LOGIC ---
@@ -719,7 +710,6 @@ def admin_dashboard():
 
         if not st.session_state.resumes_to_analyze:
             st.info("Upload and parse resumes first to enable analysis.")
-            # Note: Do NOT return here if there are no JDs, let the JD check handle it.
 
         if not st.session_state.admin_jd_list:
             st.error("Please add at least one Job Description in the 'JD Management' tab before running an analysis.")
@@ -730,7 +720,7 @@ def admin_dashboard():
         selected_resume_names = st.multiselect(
             "Select Resume(s) for Matching",
             options=resume_names,
-            default=resume_names, # Select all by default
+            default=resume_names, 
             key="select_resumes_admin"
         )
         
@@ -828,13 +818,17 @@ def admin_dashboard():
             # Create a simple table/summary of results
             display_data = []
             for item in results_df:
+                # Get status from the separate status dictionary using the resume name as the key
+                status = st.session_state.resume_statuses.get(item["resume_name"], 'Pending') 
+                
                 display_data.append({
                     "Resume": item["resume_name"],
                     "JD": item["jd_name"],
                     "Fit Score (out of 10)": item["overall_score"],
                     "Skills (%)": item.get("skills_percent", "N/A"),
                     "Experience (%)": item.get("experience_percent", "N/A"), 
-                    "Education (%)": item.get("education_percent", "N/A"),   
+                    "Education (%)": item.get("education_percent", "N/A"),
+                    "Approval Status": status
                 })
 
             st.dataframe(display_data, use_container_width=True)
@@ -967,7 +961,7 @@ def admin_dashboard():
         st.subheader("Summary of All Resumes")
         st.dataframe(summary_data, use_container_width=True)
 
-    # --- TAB 4: Vendor Approval (remains the same) ---
+    # --- TAB 4: Vendor Approval ---
     with tab_vendors:
         st.header("🤝 Vendor Management") 
         
@@ -1046,7 +1040,7 @@ def admin_dashboard():
 
                     with col_update_btn:
                         # Add some vertical space to align the button
-                        st.markdown("##") # Using a large header for spacing
+                        st.markdown("##") 
                         if st.button("Update", key=f"vendor_update_btn_{idx}", use_container_width=True):
                             
                             # Update the status in the session state dictionary
@@ -1072,7 +1066,7 @@ def admin_dashboard():
             st.dataframe(summary_data, use_container_width=True)
 
 
-    # --- TAB 5: Statistics (remains the same) ---
+    # --- TAB 5: Statistics ---
     with tab_statistics:
         st.header("System Statistics")
         st.markdown("---")
@@ -1147,7 +1141,7 @@ def candidate_dashboard():
                 if "error" not in result:
                     st.session_state.parsed = result['parsed']
                     st.session_state.full_text = result['full_text']
-                    st.session_state.excel_data = result['excel_data'] # This must be set here
+                    st.session_state.excel_data = result['excel_data'] 
                     st.success("Resume parsed successfully!")
                 else:
                     st.error(f"Parsing failed: {result['error']}")
@@ -1170,7 +1164,7 @@ def candidate_dashboard():
         "🎯 Batch JD Match" 
     ])
     
-    # --- TAB 1: Resume Parsing (remains the same) ---
+    # --- TAB 1: Resume Parsing ---
     with tab1:
         st.header("Resume Parsing")
         if not st.session_state.full_text:
@@ -1220,7 +1214,7 @@ def candidate_dashboard():
 
         st.text_area("Selected Section Content", section_content_str, height=200)
 
-    # --- TAB 2: Resume Chatbot (Q&A) (remains the same) ---
+    # --- TAB 2: Resume Chatbot (Q&A) ---
     with tab2:
         st.header("Resume Chatbot (Q&A)")
         st.markdown("### Ask any question about the uploaded resume.")
@@ -1242,7 +1236,7 @@ def candidate_dashboard():
         if st.session_state.get('qa_answer'):
             st.text_area("Answer", st.session_state.qa_answer, height=150)
 
-    # --- TAB 3: Interview Prep (remains the same) ---
+    # --- TAB 3: Interview Prep ---
     with tab3:
         st.header("Interview Preparation Tools")
         if not st.session_state.parsed or "error" in st.session_state.parsed:
@@ -1379,7 +1373,7 @@ def candidate_dashboard():
         else:
             st.info("No Job Descriptions added yet.")
 
-    # --- TAB 5: Batch JD Match (Candidate) (FIXED FOR ROBUSTNESS) ---
+    # --- TAB 5: Batch JD Match (Candidate) (INCLUDES ROBUSTNESS FIXES) ---
     with tab5:
         st.header("🎯 Batch JD Match")
         st.markdown("Compare your current resume against all saved job descriptions.")
@@ -1525,11 +1519,10 @@ def main():
         st.session_state.jd_fit_output = ""
         
         # Admin Dashboard specific lists
-        st.session_state.admin_jd_list = [] # For Admin Dashboard (list of dicts: {'name', 'content'})
-        # 'resumes_to_analyze' now stores placeholders for 'applied_jd' and 'submitted_date'
+        st.session_state.admin_jd_list = [] 
         st.session_state.resumes_to_analyze = [] 
-        st.session_state.admin_match_results = [] # For Admin Dashboard match results
-        st.session_state.resume_statuses = {} # NEW: For Admin to track resume approval status
+        st.session_state.admin_match_results = [] 
+        st.session_state.resume_statuses = {} 
         
         # --- VENDOR STATE INIT ---
         st.session_state.vendors = []
