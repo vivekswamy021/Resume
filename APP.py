@@ -585,7 +585,7 @@ def admin_dashboard():
             uploaded_files = st.file_uploader(
                 "Upload JD file(s)",
                 type=["pdf", "txt", "docx"],
-                accept_multiple_files=True if jd_type == "Multiple JD" else False,
+                accept_multiple_files=True if jd_type == "Multiple JD" and uploaded_files else False,
                 key="jd_file_uploader_admin"
             )
             if st.button("Add JD(s) from File", key="add_jd_file_btn_admin"):
@@ -756,9 +756,9 @@ def admin_dashboard():
                     try:
                         fit_output = evaluate_jd_fit(selected_jd_content, parsed_json)
                         
-                        # --- ENHANCED EXTRACTION LOGIC (FIXED FOR ROBUSTNESS) ---
-                        # Look for "Overall Fit Score: [Score]/10" - handles optional brackets [ ] around the score
-                        overall_score_match = re.search(r'Overall Fit Score:\s*\[?(\d+)[\]]?\s*/10', fit_output, re.IGNORECASE)
+                        # --- ENHANCED EXTRACTION LOGIC (FIXED FOR ROBUSTNESS: Overall Score) ---
+                        # New FIX: Allows any whitespace/non-digit character sequence between the label and the score (number)
+                        overall_score_match = re.search(r'Overall Fit Score:\s*[^\d]*(\d+)\s*/10', fit_output, re.IGNORECASE)
                         
                         # Look for the section analysis block between delimiters
                         section_analysis_match = re.search(
@@ -1322,7 +1322,7 @@ def candidate_dashboard():
             uploaded_files = st.file_uploader(
                 "Upload JD file(s)",
                 type=["pdf", "txt", "docx"],
-                accept_multiple_files=True if jd_type == "Multiple JD" else False,
+                accept_multiple_files=True if jd_type == "Multiple JD" and uploaded_files else False,
                 key="jd_file_uploader_candidate"
             )
             if st.button("Add JD(s) from File", key="add_jd_file_btn_candidate"):
@@ -1405,9 +1405,9 @@ def candidate_dashboard():
                     try:
                         fit_output = evaluate_jd_fit(jd_content, parsed_json)
                         
-                        # --- ENHANCED EXTRACTION LOGIC (FIXED FOR ROBUSTNESS) ---
-                        # Look for "Overall Fit Score: [Score]/10" - handles optional brackets [ ] around the score
-                        overall_score_match = re.search(r'Overall Fit Score:\s*\[?(\d+)[\]]?\s*/10', fit_output, re.IGNORECASE)
+                        # --- ENHANCED EXTRACTION LOGIC (FIXED FOR ROBUSTNESS: Overall Score) ---
+                        # New FIX: Allows any whitespace/non-digit character sequence between the label and the score (number)
+                        overall_score_match = re.search(r'Overall Fit Score:\s*[^\d]*(\d+)\s*/10', fit_output, re.IGNORECASE)
                         
                         # Look for the section analysis block between delimiters
                         section_analysis_match = re.search(
