@@ -170,6 +170,12 @@ def parse_with_llm(text, return_type='json'):
                     for sub_k, sub_v in v.items():
                         if sub_v:
                             md += f"  - {sub_k.replace('_', ' ').title()}: {sub_v}\n"
+                    
+                    # Handle cases where the top level is a dictionary (e.g., Personal Details)
+                    if not v and isinstance(v, dict):
+                        for sub_k, sub_v in v.items():
+                            if sub_v:
+                                md += f"  - {sub_k.replace('_', ' ').title()}: {sub_v}\n"
                 else:
                     md += f"  {v}\n"
                 md += "\n"
@@ -302,6 +308,7 @@ def dump_to_excel(parsed_json, filename):
                         if item:
                             ws.append(["", str(item)])
                 elif isinstance(content, dict):
+                    # For nested dictionaries (like personal details, if present)
                     for k, v in content.items():
                         if v:
                             ws.append(["", f"{k.replace('_', ' ').title()}: {v}"])
@@ -482,7 +489,7 @@ def update_resume_status(resume_name, new_status, applied_jd, submitted_date, re
 def admin_dashboard():
     st.header("🧑‍💼 Admin Dashboard")
     
-    # --- NAVIGATION BLOCK ---
+    # --- MODIFIED NAVIGATION BLOCK ---
     nav_col1, nav_col2 = st.columns([1, 1])
 
     with nav_col1:
@@ -494,7 +501,7 @@ def admin_dashboard():
         # Log Out button directing to the login page
         if st.button("🚪 Log Out", use_container_width=True):
             go_to("login") 
-    # --- END NAVIGATION BLOCK ---
+    # --- END MODIFIED NAVIGATION BLOCK ---
     
     # Initialize Admin session state variables
     if "admin_jd_list" not in st.session_state:
@@ -514,16 +521,16 @@ def admin_dashboard():
     # --- END VENDOR INITIALIZATION ---
 
     
-    # --- UPDATED TAB ORDER (Main Tabs) ---
+    # --- UPDATED TAB ORDER: NEW User Management Tab ---
     tab_jd, tab_analysis, tab_user_management, tab_statistics = st.tabs([
         "📄 JD Management", 
         "📊 Resume Analysis", 
-        "👤 User Management", # NEW Main Tab
+        "👥 User Management", # <-- NEW TAB HERE
         "📈 Statistics" 
     ])
     # -------------------------
 
-    # --- TAB 1: JD Management ---
+    # --- TAB 1: JD Management (NO CHANGE) ---
     with tab_jd:
         st.subheader("Add and Manage Job Descriptions (JD)")
         
@@ -584,13 +591,11 @@ def admin_dashboard():
             uploaded_files = st.file_uploader(
                 "Upload JD file(s)",
                 type=["pdf", "txt", "docx"],
-                accept_multiple_files=True,
+                accept_multiple_files=True if jd_type == "Multiple JD" and uploaded_files else False,
                 key="jd_file_uploader_admin"
             )
             if st.button("Add JD(s) from File", key="add_jd_file_btn_admin"):
-                # Handle single file or multiple files
-                files_to_process = uploaded_files if isinstance(uploaded_files, list) else ([uploaded_files] if uploaded_files else [])
-                
+                files_to_process = uploaded_files if jd_type == "Multiple JD" and uploaded_files else [uploaded_files]
                 count = 0
                 for file in files_to_process:
                     if file:
@@ -639,7 +644,7 @@ def admin_dashboard():
             st.info("No Job Descriptions added yet.")
 
 
-    # --- TAB 2: Resume Analysis --- 
+    # --- TAB 2: Resume Analysis (INCLUDES ALL ROBUSTNESS FIXES) --- 
     with tab_analysis:
         st.subheader("Analyze Resumes Against Job Descriptions")
 
@@ -659,49 +664,49 @@ def admin_dashboard():
         
         with col_parse:
             if st.button("Load and Parse Resume(s) for Analysis", key="parse_resumes_admin", use_container_width=True):
-                files_to_process = uploaded_files if isinstance(uploaded_files, list) else ([uploaded_files] if uploaded_files else [])
-                
-                if not files_to_process:
-                    st.warning("Please upload one or more resume files.")
+                if uploaded_files:
+                    files_to_process = uploaded_files if isinstance(uploaded_files, list) else [uploaded_files]
                     
-                count = 0
-                with st.spinner("Parsing resume(s)... This may take a moment."):
-                    for file in files_to_process:
-                        if file:
-                            result = parse_and_store_resume(file, file_name_key='admin_analysis')
-                            
-                            if "error" not in result:
-                                # --- ADD PLACEHOLDER METADATA HERE ---
-                                result['applied_jd'] = "N/A (Pending Assignment)"
-                                result['submitted_date'] = date.today().strftime("%Y-%m-%d")
+                    count = 0
+                    with st.spinner("Parsing resume(s)... This may take a moment."):
+                        for file in files_to_process:
+                            if file:
+                                result = parse_and_store_resume(file, file_name_key='admin_analysis')
                                 
-                                st.session_state.resumes_to_analyze.append(result)
-                                
-                                # Initialize status for the resume using its unique name
-                                resume_id = result['name']
-                                if resume_id not in st.session_state.resume_statuses:
-                                    st.session_state.resume_statuses[resume_id] = "Pending"
-                                # --- END ADD PLACEHOLDER METADATA HERE ---
-                                
-                                count += 1
-                            else:
-                                st.error(f"Failed to parse {file.name}: {result['error']}")
+                                if "error" not in result:
+                                    # --- ADD PLACEHOLDER METADATA HERE ---
+                                    result['applied_jd'] = "N/A (Pending Assignment)"
+                                    result['submitted_date'] = date.today().strftime("%Y-%m-%d")
+                                    
+                                    st.session_state.resumes_to_analyze.append(result)
+                                    
+                                    # Initialize status for the resume using its unique name
+                                    resume_id = result['name']
+                                    if resume_id not in st.session_state.resume_statuses:
+                                        st.session_state.resume_statuses[resume_id] = "Pending"
+                                    # --- END ADD PLACEHOLDER METADATA HERE ---
+                                    
+                                    count += 1
+                                else:
+                                    st.error(f"Failed to parse {file.name}: {result['error']}")
 
-                if count > 0:
-                    st.success(f"Successfully loaded and parsed {count} resume(s) for analysis.")
-                    st.rerun() 
-                elif not st.session_state.resumes_to_analyze:
-                    st.warning("No resumes were successfully loaded and parsed.")
+                    if count > 0:
+                        st.success(f"Successfully loaded and parsed {count} resume(s) for analysis.")
+                        st.rerun() 
+                    elif not st.session_state.resumes_to_analyze:
+                        st.warning("No resumes were successfully loaded and parsed.")
+                else:
+                    st.warning("Please upload one or more resume files.")
         
         with col_clear:
-            # --- CLEAR BUTTON LOGIC ---
+            # --- NEW CLEAR BUTTON LOGIC ---
             if st.button("🗑️ Clear All Resumes", key="clear_resumes_admin", use_container_width=True, help="Removes all currently loaded resumes and match results."):
                 st.session_state.resumes_to_analyze = []
                 st.session_state.admin_match_results = []
                 st.session_state.resume_statuses = {} 
                 st.success("All resumes and associated match results have been cleared.")
                 st.rerun() 
-            # --- END CLEAR BUTTON LOGIC ---
+            # --- END NEW CLEAR BUTTON LOGIC ---
 
 
         st.markdown("---")
@@ -711,7 +716,6 @@ def admin_dashboard():
 
         if not st.session_state.resumes_to_analyze:
             st.info("Upload and parse resumes first to enable analysis.")
-            return
 
         if not st.session_state.admin_jd_list:
             st.error("Please add at least one Job Description in the 'JD Management' tab before running an analysis.")
@@ -759,7 +763,7 @@ def admin_dashboard():
                         fit_output = evaluate_jd_fit(selected_jd_content, parsed_json)
                         
                         # --- ENHANCED EXTRACTION LOGIC (FIXED FOR ROBUSTNESS: Overall Score) ---
-                        # New FIX: Allows any whitespace/non-digit character sequence between the label and the score (number)
+                        # CRITICAL FIX: Allows any whitespace/non-digit character sequence between the label and the score (number)
                         overall_score_match = re.search(r'Overall Fit Score:\s*[^\d]*(\d+)\s*/10', fit_output, re.IGNORECASE)
                         
                         # Look for the section analysis block between delimiters
@@ -843,25 +847,23 @@ def admin_dashboard():
                 with st.expander(header_text):
                     st.markdown(item['full_analysis'])
 
-
-    # --- TAB 3: User Management (NEW MAIN TAB) ---
+                    
+    # --- TAB 3: User Management (CANDIDATE AND VENDOR APPROVAL) ---
     with tab_user_management:
-        st.header("👤 User Management")
+        st.header("👥 User Management & Approvals")
         
-        # --- SUB-TABS within User Management ---
-        tab_candidate_approval, tab_vendor_approval = st.tabs([
-            "Candidate Approval",
-            "Vendor Approval"
-        ])
-        
-        # --- SUB-TAB 1: Candidate Approval ---
-        with tab_candidate_approval:
-            st.subheader("Review and Approve Candidate Resumes")
-            st.markdown("### Resume Status List")
+        # --- NESTED TABS ---
+        approval_tab_candidate, approval_tab_vendor = st.tabs(["👤 Candidate Approval", "🤝 Vendor Approval"])
+        # --- END NESTED TABS ---
+
+
+        # --- NESTED TAB 3a: Candidate Approval ---
+        with approval_tab_candidate:
+            st.markdown("### Review and Approve Candidate Resumes")
             
             if not st.session_state.resumes_to_analyze:
                 st.info("No resumes have been uploaded and parsed in the 'Resume Analysis' tab yet.")
-                # We stop the display here for this section if there are no resumes
+                # We can return here if we don't want to show the empty table, but better to show the message and continue
             else:
                 # Get list of uploaded JD names for the dropdown
                 jd_options = [item['name'].replace("--- Simulated JD for: ", "") for item in st.session_state.admin_jd_list]
@@ -879,7 +881,7 @@ def admin_dashboard():
                     # Use a container to group the elements for a single resume
                     with st.container(border=True):
                         
-                        # --- METADATA INPUT AND DISPLAY (FIXED SECTION) ---
+                        # --- METADATA INPUT AND DISPLAY ---
                         st.markdown(f"**Resume:** **{resume_name}**")
                         
                         # Inputs for metadata
@@ -957,7 +959,7 @@ def admin_dashboard():
                         
                 st.markdown("---")
                         
-                # Summary table of all statuses
+                # Create a richer summary table including the new metadata
                 summary_data = []
                 for resume_data in st.session_state.resumes_to_analyze:
                     name = resume_data['name']
@@ -971,27 +973,28 @@ def admin_dashboard():
                 st.subheader("Summary of All Resumes")
                 st.dataframe(summary_data, use_container_width=True)
 
-        # --- SUB-TAB 2: Vendor Approval ---
-        with tab_vendor_approval:
-            st.subheader("🤝 Vendor Management") 
+
+        # --- NESTED TAB 3b: Vendor Approval ---
+        with approval_tab_vendor:
+            st.markdown("### Manage Vendor Approvals") 
             
             # --- SECTION 1: Add New Vendor ---
-            st.markdown("### 1. Add New Vendor")
+            st.markdown("#### 1. Add New Vendor")
             with st.form("add_vendor_form"):
                 col1, col2 = st.columns(2)
                 with col1:
-                    vendor_name = st.text_input("Vendor Name", key="new_vendor_name")
+                    vendor_name = st.text_input("Vendor Name", key="new_vendor_name_um") # Unique key
                 with col2:
-                    vendor_domain = st.text_input("Service / Domain Name", key="new_vendor_domain")
+                    vendor_domain = st.text_input("Service / Domain Name", key="new_vendor_domain_um") # Unique key
                     
                 col3, col4 = st.columns(2)
                 with col3:
-                    submitted_date = st.date_input("Submitted Date", value=date.today(), key="new_vendor_date")
+                    submitted_date = st.date_input("Submitted Date", value=date.today(), key="new_vendor_date_um") # Unique key
                 with col4:
                     initial_status = st.selectbox(
                         "Set Status", 
                         ["Pending Review", "Approved", "Rejected"],
-                        key="new_vendor_status"
+                        key="new_vendor_status_um" # Unique key
                     )
                 
                 add_vendor_button = st.form_submit_button("Add Vendor", use_container_width=True)
@@ -1020,7 +1023,7 @@ def admin_dashboard():
             st.markdown("---")
             
             # --- SECTION 2: Update Existing Vendor Status ---
-            st.markdown("### 2. Update Existing Vendor Status")
+            st.markdown("#### 2. Update Existing Vendor Status")
             
             if not st.session_state.vendors:
                 st.info("No vendors have been added yet.")
@@ -1044,14 +1047,14 @@ def admin_dashboard():
                                 "Set Status",
                                 ["Pending Review", "Approved", "Rejected"],
                                 index=["Pending Review", "Approved", "Rejected"].index(current_status),
-                                key=f"vendor_status_select_{idx}",
+                                key=f"vendor_status_select_{idx}_um", # Unique key
                                 label_visibility="collapsed"
                             )
 
                         with col_update_btn:
                             # Add some vertical space to align the button
                             st.markdown("##") 
-                            if st.button("Update", key=f"vendor_update_btn_{idx}", use_container_width=True):
+                            if st.button("Update", key=f"vendor_update_btn_{idx}_um", use_container_width=True): # Unique key
                                 
                                 # Update the status in the session state dictionary
                                 st.session_state.vendor_statuses[vendor_id] = new_status
@@ -1076,7 +1079,7 @@ def admin_dashboard():
                 st.dataframe(summary_data, use_container_width=True)
 
 
-    # --- TAB 4: Statistics ---
+    # --- TAB 4: Statistics (Renamed from Tab 5) ---
     with tab_statistics:
         st.header("System Statistics")
         st.markdown("---")
@@ -1332,11 +1335,11 @@ def candidate_dashboard():
             uploaded_files = st.file_uploader(
                 "Upload JD file(s)",
                 type=["pdf", "txt", "docx"],
-                accept_multiple_files=True,
+                accept_multiple_files=True if jd_type == "Multiple JD" and uploaded_files else False,
                 key="jd_file_uploader_candidate"
             )
             if st.button("Add JD(s) from File", key="add_jd_file_btn_candidate"):
-                files_to_process = uploaded_files if isinstance(uploaded_files, list) else ([uploaded_files] if uploaded_files else [])
+                files_to_process = uploaded_files if jd_type == "Multiple JD" and uploaded_files else [uploaded_files]
                 count = 0
                 for file in files_to_process:
                     if file:
@@ -1383,7 +1386,7 @@ def candidate_dashboard():
         else:
             st.info("No Job Descriptions added yet.")
 
-    # --- TAB 5: Batch JD Match (Candidate) ---
+    # --- TAB 5: Batch JD Match (Candidate) (INCLUDES ROBUSTNESS FIXES) ---
     with tab5:
         st.header("🎯 Batch JD Match")
         st.markdown("Compare your current resume against all saved job descriptions.")
@@ -1416,7 +1419,7 @@ def candidate_dashboard():
                         fit_output = evaluate_jd_fit(jd_content, parsed_json)
                         
                         # --- ENHANCED EXTRACTION LOGIC (FIXED FOR ROBUSTNESS: Overall Score) ---
-                        # New FIX: Allows any whitespace/non-digit character sequence between the label and the score (number)
+                        # CRITICAL FIX: Allows any whitespace/non-digit character sequence between the label and the score (number)
                         overall_score_match = re.search(r'Overall Fit Score:\s*[^\d]*(\d+)\s*/10', fit_output, re.IGNORECASE)
                         
                         # Look for the section analysis block between delimiters
