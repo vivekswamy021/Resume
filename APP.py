@@ -272,6 +272,62 @@ def evaluate_jd_fit(job_description, parsed_json):
     )
     return response.choices[0].message.content.strip()
 
+# --- NEW FUNCTION FOR INTERVIEW EVALUATION ---
+def evaluate_interview_answers(qa_list, parsed_json):
+    """Evaluates the user's answers against the resume content and provides feedback."""
+    
+    resume_summary = json.dumps(parsed_json, indent=2)
+    
+    qa_summary = "\n---\n".join([
+        f"Q: {item['question']}\nA: {item['answer']}" 
+        for item in qa_list
+    ])
+    
+    prompt = f"""You are an expert HR Interviewer. Evaluate the candidate's answers based on the following:
+    1.  **The Candidate's Resume Content (for context):**
+        {resume_summary}
+    2.  **The Candidate's Questions and Answers:**
+        {qa_summary}
+
+    For each Question-Answer pair, provide a score (out of 10) and detailed feedback. The feedback must include:
+    * **Clarity & Accuracy:** How well the answer directly and accurately addresses the question, referencing the resume context.
+    * **Gaps & Improvements:** Specific suggestions on how the candidate could improve the answer or what critical resume points they missed/could elaborate on.
+    
+    Finally, provide an **Overall Summary** and a **Total Score (out of {len(qa_list) * 10})**.
+    
+    **Format the output strictly using Markdown headings and bullet points:**
+    
+    ## Evaluation Results
+    
+    ### Question 1: [Question Text]
+    Score: [X]/10
+    Feedback:
+    - **Clarity & Accuracy:** ...
+    - **Gaps & Improvements:** ...
+    
+    ### Question 2: [Question Text]
+    Score: [X]/10
+    Feedback:
+    - **Clarity & Accuracy:** ...
+    - **Gaps & Improvements:** ...
+    
+    ... [Repeat for all questions] ...
+    
+    ---
+    
+    ## Final Assessment
+    Total Score: [Y]/{len(qa_list) * 10}
+    Overall Summary: [A concise summary of the candidate's performance and next steps.]
+    """
+
+    response = client.chat.completions.create(
+        model=GROQ_MODEL, 
+        messages=[{"role": "user", "content": prompt}], 
+        temperature=0.3
+    )
+    return response.choices[0].message.content.strip()
+# --- END NEW FUNCTION ---
+
 
 # -------------------------
 # Utility Functions
@@ -393,9 +449,13 @@ Generate 3 interview questions each for these levels: Generic, Basic, Intermedia
 **IMPORTANT: Format the output strictly as follows, with level headers and questions starting with 'Qx:':**
 [Generic]
 Q1: Question text...
+Q2: Question text...
+Q3: Question text...
+[Basic]
+Q1: Question text...
 ...
 [Difficult]
-Q1: Question text...
+Q3: Question text...
     """
     response = client.chat.completions.create(
         model=GROQ_MODEL, 
@@ -1232,15 +1292,17 @@ def candidate_dashboard():
             if st.session_state.get('qa_answer'):
                 st.text_area("Answer", st.session_state.qa_answer, height=150)
 
-    # --- TAB 3: Interview Prep ---
+    # --- TAB 3: Interview Prep (MODIFIED) ---
     with tab3:
         st.header("Interview Preparation Tools")
         if not is_resume_parsed or "error" in st.session_state.parsed:
             st.warning("Please upload and successfully parse a resume first.")
         else:
             if 'iq_output' not in st.session_state: st.session_state.iq_output = ""
+            if 'interview_qa' not in st.session_state: st.session_state.interview_qa = [] # NEW
+            if 'evaluation_report' not in st.session_state: st.session_state.evaluation_report = "" # NEW
             
-            st.subheader("Generate Interview Questions")
+            st.subheader("1. Generate Interview Questions")
             section_choice = st.selectbox("Select Section", question_section_options, key='iq_section_c')
             
             if st.button("Generate Interview Questions", key='iq_btn_c'):
@@ -1248,12 +1310,88 @@ def candidate_dashboard():
                     try:
                         raw_questions_response = generate_interview_questions(st.session_state.parsed, section_choice)
                         st.session_state.iq_output = raw_questions_response
+                        
+                        # Process raw text into structured Q&A list (NEW)
+                        q_list = []
+                        current_level = ""
+                        for line in raw_questions_response.splitlines():
+                            line = line.strip()
+                            if line.startswith('[') and line.endswith(']'):
+                                current_level = line.strip('[]')
+                            elif line.lower().startswith('q') and ':' in line:
+                                question_text = line[line.find(':') + 1:].strip()
+                                q_list.append({
+                                    "question": f"({current_level}) {question_text}",
+                                    "answer": "",
+                                    "level": current_level
+                                })
+                                
+                        st.session_state.interview_qa = q_list
+                        st.session_state.evaluation_report = "" # Clear previous report
+                        st.success(f"Generated {len(q_list)} questions based on your **{section_choice}** section.")
+                        
                     except Exception as e:
                         st.error(f"Error generating questions: {e}")
                         st.session_state.iq_output = "Error generating questions."
+                        st.session_state.interview_qa = []
 
-            if st.session_state.get('iq_output'):
-                st.text_area("Generated Interview Questions (by difficulty level)", st.session_state.iq_output, height=400)
+
+            # --- NEW INTERACTIVE Q&A SECTION ---
+            if st.session_state.get('interview_qa'):
+                st.markdown("---")
+                st.subheader("2. Practice and Record Answers")
+                
+                # Use a form to capture all answers simultaneously
+                with st.form("interview_practice_form"):
+                    
+                    # Display each question and provide a text area for the answer
+                    for i, qa_item in enumerate(st.session_state.interview_qa):
+                        st.markdown(f"**Question {i+1}:** {qa_item['question']}")
+                        # Set initial value from session state to persist answers during Reruns
+                        # Use the actual answer in session state as default value for persistence
+                        answer = st.text_area(
+                            f"Your Answer for Q{i+1}", 
+                            value=st.session_state.interview_qa[i]['answer'], # Use stored answer
+                            height=100,
+                            key=f'answer_q_{i}',
+                            label_visibility='collapsed'
+                        )
+                        # Immediately update the session state item (this happens on form submit)
+                        st.session_state.interview_qa[i]['answer'] = answer # This ensures the value persists within the form structure
+                        st.markdown("---") # Visual separator between questions
+                        
+                    # Submission button
+                    submit_button = st.form_submit_button("Submit & Evaluate Answers", use_container_width=True)
+
+                    if submit_button:
+                        # Re-read all answers on submit (optional, but good practice if form reruns are tricky)
+                        # The code above already stores the answer value in st.session_state.interview_qa[i]['answer'] on submit.
+                        
+                        # Check if all answers are filled
+                        if all(item['answer'].strip() for item in st.session_state.interview_qa):
+                            with st.spinner("Sending answers to AI Evaluator..."):
+                                try:
+                                    report = evaluate_interview_answers(
+                                        st.session_state.interview_qa,
+                                        st.session_state.parsed
+                                    )
+                                    st.session_state.evaluation_report = report
+                                    st.success("Evaluation complete! See the report below.")
+                                except Exception as e:
+                                    st.error(f"Evaluation failed: {e}")
+                                    st.session_state.evaluation_report = f"Evaluation failed: {e}\n{traceback.format_exc()}"
+                        else:
+                            st.error("Please answer all generated questions before submitting.")
+                
+                # Display Evaluation Report
+                if st.session_state.get('evaluation_report'):
+                    st.markdown("---")
+                    st.subheader("3. AI Evaluation Report")
+                    st.markdown(st.session_state.evaluation_report)
+                    
+            elif st.session_state.get('iq_output'):
+                # Fallback display of questions if not structured (just for reference)
+                 st.text_area("Generated Interview Questions (Raw Output)", st.session_state.iq_output, height=400)
                 
     # --- TAB 4: JD Management (Candidate) ---
     with tab4:
@@ -1518,8 +1656,12 @@ def main():
     if 'candidate_jd_list' not in st.session_state: st.session_state.candidate_jd_list = []
     if 'candidate_match_results' not in st.session_state: st.session_state.candidate_match_results = []
     
-    # NEW: Store uploaded file objects for Candidate Dashboard
+    # Resume Parsing Upload State
     if 'candidate_uploaded_resumes' not in st.session_state: st.session_state.candidate_uploaded_resumes = []
+    
+    # Interview Prep Q&A State (NEW)
+    if 'interview_qa' not in st.session_state: st.session_state.interview_qa = [] 
+    if 'evaluation_report' not in st.session_state: st.session_state.evaluation_report = ""
 
 
     # --- Page Routing ---
