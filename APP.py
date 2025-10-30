@@ -52,6 +52,15 @@ def go_to(page_name):
     """Changes the current page in Streamlit's session state."""
     st.session_state.page = page_name
 
+# --- NEW FUNCTION FOR INTERVIEW STATE CLEARING ---
+def clear_interview_state():
+    """Clears all generated questions, answers, and the evaluation report."""
+    st.session_state.interview_qa = []
+    st.session_state.iq_output = ""
+    st.session_state.evaluation_report = ""
+    st.toast("Practice answers cleared.")
+# --- END NEW FUNCTION ---
+
 # -------------------------
 # CORE LOGIC: FILE HANDLING AND EXTRACTION
 # -------------------------
@@ -1225,6 +1234,10 @@ def candidate_dashboard():
                         st.session_state.full_text = result['full_text']
                         st.session_state.excel_data = result['excel_data'] 
                         st.session_state.parsed['name'] = result['name'] 
+                        
+                        # Clear interview prep state when a new resume is loaded
+                        clear_interview_state()
+                        
                         st.success(f"Successfully loaded and parsed **{result['name']}**.")
                     else:
                         st.error(f"Parsing failed for {file_to_parse.name}: {result['error']}")
@@ -1292,7 +1305,7 @@ def candidate_dashboard():
             if st.session_state.get('qa_answer'):
                 st.text_area("Answer", st.session_state.qa_answer, height=150)
 
-    # --- TAB 3: Interview Prep (MODIFIED - FIX APPLIED HERE) ---
+    # --- TAB 3: Interview Prep (FIX APPLIED) ---
     with tab3:
         st.header("Interview Preparation Tools")
         if not is_resume_parsed or "error" in st.session_state.parsed:
@@ -1303,7 +1316,15 @@ def candidate_dashboard():
             if 'evaluation_report' not in st.session_state: st.session_state.evaluation_report = "" 
             
             st.subheader("1. Generate Interview Questions")
-            section_choice = st.selectbox("Select Section", question_section_options, key='iq_section_c')
+            
+            # --- FIX 2: Clear state on selectbox change ---
+            section_choice = st.selectbox(
+                "Select Section", 
+                question_section_options, 
+                key='iq_section_c',
+                on_change=clear_interview_state # Call function to reset state
+            )
+            # --- END FIX 2 ---
             
             if st.button("Generate Interview Questions", key='iq_btn_c'):
                 with st.spinner("Generating questions..."):
@@ -1311,8 +1332,7 @@ def candidate_dashboard():
                         raw_questions_response = generate_interview_questions(st.session_state.parsed, section_choice)
                         st.session_state.iq_output = raw_questions_response
                         
-                        # --- FIX START ---
-                        # Clear previous questions/answers and evaluation report before generating new ones
+                        # --- FIX 1: Clear previous state on button click ---
                         st.session_state.interview_qa = [] 
                         st.session_state.evaluation_report = "" 
                         
@@ -1332,7 +1352,7 @@ def candidate_dashboard():
                                 })
                                 
                         st.session_state.interview_qa = q_list
-                        # --- FIX END ---
+                        # --- END FIX 1 ---
                         
                         st.success(f"Generated {len(q_list)} questions based on your **{section_choice}** section.")
                         
