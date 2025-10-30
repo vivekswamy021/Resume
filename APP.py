@@ -1215,7 +1215,7 @@ def candidate_dashboard():
 
             st.markdown("---")
             
-            # 3. View Parsed Data
+            # 3. View Parsed Data (MODIFIED: Removed Section Dropdown/Content)
             st.markdown("### 3. View Parsed Data")
             is_resume_parsed = bool(st.session_state.get('parsed', {}).get('name')) or bool(st.session_state.get('full_text'))
             
@@ -1324,15 +1324,15 @@ def candidate_dashboard():
                             jd_text = extract_jd_from_linkedin_url(url)
                         
                         name_base = url.split('/jobs/view/')[-1].split('/')[0] if '/jobs/view/' in url else f"URL {count+1}"
-                            # CRITICAL: Added explicit JD naming convention for LinkedIn URLs in Candidate JD list
-                            name = f"JD from URL: {name_base}"
-                            if name in [item['name'] for item in st.session_state.candidate_jd_list]:
-                                name = f"JD from URL: {name_base} ({len(st.session_state.candidate_jd_list) + 1})"
+                        # CRITICAL: Added explicit JD naming convention for LinkedIn URLs in Candidate JD list
+                        name = f"JD from URL: {name_base}" # <-- INDENTATION FIXED HERE
+                        if name in [item['name'] for item in st.session_state.candidate_jd_list]:
+                            name = f"JD from URL: {name_base} ({len(st.session_state.candidate_jd_list) + 1})" # <-- INDENTATION FIXED HERE
 
-                            st.session_state.candidate_jd_list.append({"name": name, "content": jd_text})
-                            
-                            if not jd_text.startswith("[Error"):
-                                count += 1
+                        st.session_state.candidate_jd_list.append({"name": name, "content": jd_text})
+                        
+                        if not jd_text.startswith("[Error"):
+                            count += 1
                                 
                     if count > 0:
                         st.success(f"✅ {count} JD(s) added successfully! Check the display below for the extracted content.")
