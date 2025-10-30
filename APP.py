@@ -948,6 +948,7 @@ def admin_dashboard():
 
         if not st.session_state.admin_jd_list:
             st.error("Please add at least one Job Description in the 'JD Management' tab before running an analysis.")
+            # Note: We return here to prevent the selectbox/multiselect from crashing if lists are empty.
             return
 
         # --- RESUME SELECTION ---
@@ -1161,6 +1162,11 @@ def candidate_dashboard():
         st.header("Upload Your Resume")
         uploaded_file = st.file_uploader("Choose a PDF or DOCX file", type=["pdf", "docx"])
         
+        # CRITICAL FIX: Ensure session state keys are initialized defensively for the candidate dashboard
+        if 'parsed' not in st.session_state: st.session_state.parsed = {}
+        if 'full_text' not in st.session_state: st.session_state.full_text = ""
+        if 'excel_data' not in st.session_state: st.session_state.excel_data = None
+        
         if uploaded_file is not None:
             if st.button("Parse Resume", use_container_width=True):
                 # Centralized upload logic for Candidate Dashboard
@@ -1192,100 +1198,106 @@ def candidate_dashboard():
         "🎯 Batch JD Match" 
     ])
     
+    # CRITICAL FIX: Check if a resume is parsed for all dependent tabs
+    is_resume_parsed = bool(st.session_state.get('parsed', {}).get('name')) or bool(st.session_state.get('full_text'))
+    
     # --- TAB 1: Resume Parsing ---
     with tab1:
         st.header("Resume Parsing")
-        if not st.session_state.full_text:
+        if not is_resume_parsed:
             st.warning("Please upload and parse a resume in the sidebar first.")
-            return
-
-        col1, col2 = st.columns(2)
-        with col1:
-            output_format = st.radio('Output Format', ['json', 'markdown'], key='format_radio_c')
-        with col2:
-            section = st.selectbox('Select Section to View', section_options, key='section_select_c')
-
-        parsed = st.session_state.parsed
-        full_text = st.session_state.full_text
-
-        if "error" in parsed:
-            st.error(parsed.get("error", "An unknown error occurred during parsing."))
-            return
-
-        # Display Main Parsed Output
-        if output_format == 'json':
-            output_str = json.dumps(parsed, indent=2)
-            st.text_area("Parsed Output (JSON)", output_str, height=350)
         else:
-            output_str = parse_with_llm(full_text, return_type='markdown')
-            st.markdown("### Parsed Output (Markdown)")
-            st.markdown(output_str)
+            col1, col2 = st.columns(2)
+            with col1:
+                output_format = st.radio('Output Format', ['json', 'markdown'], key='format_radio_c')
+            with col2:
+                section = st.selectbox('Select Section to View', section_options, key='section_select_c')
 
-        # Download Buttons
-        if st.session_state.excel_data:
-            st.download_button(
-                label="Download Parsed Data (Excel)",
-                data=st.session_state.excel_data,
-                file_name=f"{parsed.get('name', 'candidate').replace(' ', '_')}_parsed_data.xlsx",
-                mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
-            )
-        
-        # Section View
-        section_content_str = ""
-        if section == "full resume":
-            section_content_str = full_text
-        elif section in parsed:
-            section_val = parsed[section]
-            section_content_str = json.dumps(section_val, indent=2) if isinstance(section_val, (list, dict)) else str(section_val)
-        else:
-            section_content_str = f"Section '{section}' not found or is empty."
+            parsed = st.session_state.parsed
+            full_text = st.session_state.full_text
 
-        st.text_area("Selected Section Content", section_content_str, height=200)
+            if "error" in parsed:
+                st.error(parsed.get("error", "An unknown error occurred during parsing."))
+            else:
+                # Display Main Parsed Output
+                if output_format == 'json':
+                    output_str = json.dumps(parsed, indent=2)
+                    st.text_area("Parsed Output (JSON)", output_str, height=350)
+                else:
+                    # Defensive call
+                    output_str = parse_with_llm(full_text, return_type='markdown') if full_text else "Full text not available."
+                    st.markdown("### Parsed Output (Markdown)")
+                    st.markdown(output_str)
+
+                # Download Buttons
+                if st.session_state.excel_data:
+                    st.download_button(
+                        label="Download Parsed Data (Excel)",
+                        data=st.session_state.excel_data,
+                        file_name=f"{parsed.get('name', 'candidate').replace(' ', '_')}_parsed_data.xlsx",
+                        mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
+                    )
+                
+                # Section View
+                section_content_str = ""
+                if section == "full resume":
+                    section_content_str = full_text
+                elif section in parsed:
+                    section_val = parsed[section]
+                    section_content_str = json.dumps(section_val, indent=2) if isinstance(section_val, (list, dict)) else str(section_val)
+                else:
+                    section_content_str = f"Section '{section}' not found or is empty."
+
+                st.text_area("Selected Section Content", section_content_str, height=200)
 
     # --- TAB 2: Resume Chatbot (Q&A) ---
     with tab2:
         st.header("Resume Chatbot (Q&A)")
         st.markdown("### Ask any question about the uploaded resume.")
-        if not st.session_state.full_text:
+        if not is_resume_parsed:
             st.warning("Please upload and parse a resume first.")
-            return
+        else:
+            # Defensive initialization for Q&A output
+            if 'qa_answer' not in st.session_state: st.session_state.qa_answer = ""
+            
+            question = st.text_input("Your Question", placeholder="e.g., What are the candidate's key skills?")
+            
+            if st.button("Get Answer", key="qa_btn"):
+                with st.spinner("Generating answer..."):
+                    try:
+                        answer = qa_on_resume(question)
+                        st.session_state.qa_answer = answer
+                    except Exception as e:
+                        st.error(f"Error during Q&A: {e}")
+                        st.session_state.qa_answer = "Could not generate an answer."
 
-        question = st.text_input("Your Question", placeholder="e.g., What are the candidate's key skills?")
-        
-        if st.button("Get Answer", key="qa_btn"):
-            with st.spinner("Generating answer..."):
-                try:
-                    answer = qa_on_resume(question)
-                    st.session_state.qa_answer = answer
-                except Exception as e:
-                    st.error(f"Error during Q&A: {e}")
-                    st.session_state.qa_answer = "Could not generate an answer."
-
-        if st.session_state.get('qa_answer'):
-            st.text_area("Answer", st.session_state.qa_answer, height=150)
+            if st.session_state.get('qa_answer'):
+                st.text_area("Answer", st.session_state.qa_answer, height=150)
 
     # --- TAB 3: Interview Prep ---
     with tab3:
         st.header("Interview Preparation Tools")
-        if not st.session_state.parsed or "error" in st.session_state.parsed:
+        if not is_resume_parsed or "error" in st.session_state.parsed:
             st.warning("Please upload and successfully parse a resume first.")
-            return
-
-        st.subheader("Generate Interview Questions")
-        section_choice = st.selectbox("Select Section", question_section_options, key='iq_section_c')
-        
-        if st.button("Generate Interview Questions", key='iq_btn_c'):
-            with st.spinner("Generating questions..."):
-                try:
-                    raw_questions_response = generate_interview_questions(st.session_state.parsed, section_choice)
-                    st.session_state.iq_output = raw_questions_response
-                except Exception as e:
-                    st.error(f"Error generating questions: {e}")
-                    st.session_state.iq_output = "Error generating questions."
-
-        if st.session_state.get('iq_output'):
-            st.text_area("Generated Interview Questions (by difficulty level)", st.session_state.iq_output, height=400)
+        else:
+            # Defensive initialization for IQ output
+            if 'iq_output' not in st.session_state: st.session_state.iq_output = ""
             
+            st.subheader("Generate Interview Questions")
+            section_choice = st.selectbox("Select Section", question_section_options, key='iq_section_c')
+            
+            if st.button("Generate Interview Questions", key='iq_btn_c'):
+                with st.spinner("Generating questions..."):
+                    try:
+                        raw_questions_response = generate_interview_questions(st.session_state.parsed, section_choice)
+                        st.session_state.iq_output = raw_questions_response
+                    except Exception as e:
+                        st.error(f"Error generating questions: {e}")
+                        st.session_state.iq_output = "Error generating questions."
+
+            if st.session_state.get('iq_output'):
+                st.text_area("Generated Interview Questions (by difficulty level)", st.session_state.iq_output, height=400)
+                
     # --- TAB 4: JD Management (Candidate) ---
     with tab4:
         st.header("📚 Manage Job Descriptions for Matching")
@@ -1412,109 +1424,108 @@ def candidate_dashboard():
         st.header("🎯 Batch JD Match")
         st.markdown("Compare your current resume against all saved job descriptions.")
 
-        if not st.session_state.parsed:
+        if not is_resume_parsed:
             st.warning("Please **upload and parse your resume** in the sidebar first.")
-            return
-
-        if not st.session_state.candidate_jd_list:
+        
+        elif not st.session_state.candidate_jd_list:
             st.error("Please **add Job Descriptions** in the 'JD Management' tab (Tab 4) before running batch analysis.")
-            return
             
-        # Initialize results list for the candidate dashboard
-        if "candidate_match_results" not in st.session_state:
-            st.session_state.candidate_match_results = []
+        else:
+            # Initialize results list for the candidate dashboard
+            if "candidate_match_results" not in st.session_state:
+                st.session_state.candidate_match_results = []
 
-        if st.button(f"Run Batch Match Against {len(st.session_state.candidate_jd_list)} JDs"):
-            st.session_state.candidate_match_results = []
-            
-            resume_name = st.session_state.parsed.get('name', 'Uploaded Resume')
-            parsed_json = st.session_state.parsed
+            if st.button(f"Run Batch Match Against {len(st.session_state.candidate_jd_list)} JDs"):
+                st.session_state.candidate_match_results = []
+                
+                resume_name = st.session_state.parsed.get('name', 'Uploaded Resume')
+                parsed_json = st.session_state.parsed
 
-            with st.spinner(f"Matching {resume_name}'s resume against {len(st.session_state.candidate_jd_list)} JDs..."):
-                for jd_item in st.session_state.candidate_jd_list:
-                    
-                    jd_name = jd_item['name']
-                    jd_content = jd_item['content']
-
-                    try:
-                        fit_output = evaluate_jd_fit(jd_content, parsed_json)
+                with st.spinner(f"Matching {resume_name}'s resume against {len(st.session_state.candidate_jd_list)} JDs..."):
+                    for jd_item in st.session_state.candidate_jd_list:
                         
-                        # --- ENHANCED EXTRACTION LOGIC (FIXED FOR ROBUSTNESS: Overall Score) ---
-                        # New FIX: Allows any whitespace/non-digit character sequence between the label and the score (number)
-                        overall_score_match = re.search(r'Overall Fit Score:\s*[^\d]*(\d+)\s*/10', fit_output, re.IGNORECASE)
-                        
-                        # Look for the section analysis block between delimiters
-                        section_analysis_match = re.search(
-                             r'--- Section Match Analysis ---\s*(.*?)\s*Strengths/Matches:', 
-                             fit_output, re.DOTALL
-                        )
+                        jd_name = jd_item['name']
+                        jd_content = jd_item['content']
 
-                        skills_percent = 'N/A'
-                        experience_percent = 'N/A'
-                        education_percent = 'N/A'
-                        
-                        if section_analysis_match:
-                            section_text = section_analysis_match.group(1)
+                        try:
+                            fit_output = evaluate_jd_fit(jd_content, parsed_json)
                             
-                            # Look for "Skills Match: [XX]%" - handles optional brackets [ ] around the percentage
-                            skills_match = re.search(r'Skills Match:\s*\[?(\d+)%\]?', section_text, re.IGNORECASE)
-                            experience_match = re.search(r'Experience Match:\s*\[?(\d+)%\]?', section_text, re.IGNORECASE)
-                            education_match = re.search(r'Education Match:\s*\[?(\d+)%\]?', section_text, re.IGNORECASE)
+                            # --- ENHANCED EXTRACTION LOGIC (FIXED FOR ROBUSTNESS: Overall Score) ---
+                            # New FIX: Allows any whitespace/non-digit character sequence between the label and the score (number)
+                            overall_score_match = re.search(r'Overall Fit Score:\s*[^\d]*(\d+)\s*/10', fit_output, re.IGNORECASE)
                             
-                            if skills_match:
-                                skills_percent = skills_match.group(1)
-                            if experience_match:
-                                experience_percent = experience_match.group(1)
-                            if education_match:
-                                education_percent = education_match.group(1)
-                        
-                        overall_score = overall_score_match.group(1) if overall_score_match else 'N/A'
-                        # --- END ENHANCED EXTRACTION LOGIC ---
+                            # Look for the section analysis block between delimiters
+                            section_analysis_match = re.search(
+                                 r'--- Section Match Analysis ---\s*(.*?)\s*Strengths/Matches:', 
+                                 fit_output, re.DOTALL
+                            )
 
-                        st.session_state.candidate_match_results.append({
-                            "jd_name": jd_name,
-                            "overall_score": overall_score,
-                            "skills_percent": skills_percent,
-                            "experience_percent": experience_percent, 
-                            "education_percent": education_percent,   
-                            "full_analysis": fit_output
-                        })
-                    except Exception as e:
-                        st.session_state.candidate_match_results.append({
-                            "jd_name": jd_name,
-                            "overall_score": "Error",
-                            "skills_percent": "Error",
-                            "experience_percent": "Error", 
-                            "education_percent": "Error",   
-                            "full_analysis": f"Error running analysis for {jd_name}: {e}\n{traceback.format_exc()}"
-                        })
-                st.success("Batch analysis complete!")
+                            skills_percent = 'N/A'
+                            experience_percent = 'N/A'
+                            education_percent = 'N/A'
+                            
+                            if section_analysis_match:
+                                section_text = section_analysis_match.group(1)
+                                
+                                # Look for "Skills Match: [XX]%" - handles optional brackets [ ] around the percentage
+                                skills_match = re.search(r'Skills Match:\s*\[?(\d+)%\]?', section_text, re.IGNORECASE)
+                                experience_match = re.search(r'Experience Match:\s*\[?(\d+)%\]?', section_text, re.IGNORECASE)
+                                education_match = re.search(r'Education Match:\s*\[?(\d+)%\]?', section_text, re.IGNORECASE)
+                                
+                                if skills_match:
+                                    skills_percent = skills_match.group(1)
+                                if experience_match:
+                                    experience_percent = experience_match.group(1)
+                                if education_match:
+                                    education_percent = education_match.group(1)
+                            
+                            overall_score = overall_score_match.group(1) if overall_score_match else 'N/A'
+                            # --- END ENHANCED EXTRACTION LOGIC ---
+
+                            st.session_state.candidate_match_results.append({
+                                "jd_name": jd_name,
+                                "overall_score": overall_score,
+                                "skills_percent": skills_percent,
+                                "experience_percent": experience_percent, 
+                                "education_percent": education_percent,   
+                                "full_analysis": fit_output
+                            })
+                        except Exception as e:
+                            st.session_state.candidate_match_results.append({
+                                "jd_name": jd_name,
+                                "overall_score": "Error",
+                                "skills_percent": "Error",
+                                "experience_percent": "Error", 
+                                "education_percent": "Error",   
+                                "full_analysis": f"Error running analysis for {jd_name}: {e}\n{traceback.format_exc()}"
+                            })
+                    st.success("Batch analysis complete!")
 
 
-        # 3. Display Results
-        if st.session_state.get('candidate_match_results'):
-            st.markdown("#### Match Results for Your Resume")
-            results_df = st.session_state.candidate_match_results
-            
-            # Create a simple table/summary of results
-            display_data = []
-            for item in results_df:
-                display_data.append({
-                    "Job Description": item["jd_name"].replace("--- Simulated JD for: ", ""),
-                    "Fit Score (out of 10)": item["overall_score"],
-                    "Skills (%)": item.get("skills_percent", "N/A"),
-                    "Experience (%)": item.get("experience_percent", "N/A"), 
-                    "Education (%)": item.get("education_percent", "N/A"),   
-                })
+            # 3. Display Results
+            if st.session_state.get('candidate_match_results'):
+                st.markdown("#### Match Results for Your Resume")
+                results_df = st.session_state.candidate_match_results
+                
+                # Create a simple table/summary of results
+                display_data = []
+                for item in results_df:
+                    display_data.append({
+                        "Job Description": item["jd_name"].replace("--- Simulated JD for: ", ""),
+                        "Fit Score (out of 10)": item["overall_score"],
+                        "Skills (%)": item.get("skills_percent", "N/A"),
+                        "Experience (%)": item.get("experience_percent", "N/A"), 
+                        "Education (%)": item.get("education_percent", "N/A"),   
+                    })
 
-            st.dataframe(display_data, use_container_width=True)
+                st.dataframe(display_data, use_container_width=True)
 
-            # Display detailed analysis in expanders
-            st.markdown("##### Detailed Reports")
-            for item in results_df:
-                header_text = f"Report for **{item['jd_name'].replace('--- Simulated JD for: ', '')}** (Score: **{item['overall_score']}/10** | S: **{item.get('skills_percent', 'N/A')}%** | E: **{item.get('experience_percent', 'N/A')}%** | Edu: **{item.get('education_percent', 'N/A')}%**)"
-                with st.expander(header_text):
-                    st.markdown(item['full_analysis'])
+                # Display detailed analysis in expanders
+                st.markdown("##### Detailed Reports")
+                for item in results_df:
+                    header_text = f"Report for **{item['jd_name'].replace('--- Simulated JD for: ', '')}** (Score: **{item['overall_score']}/10** | S: **{item.get('skills_percent', 'N/A')}%** | E: **{item.get('experience_percent', 'N/A')}%** | Edu: **{item.get('education_percent', 'N/A')}%**)"
+                    with st.expander(header_text):
+                        st.markdown(item['full_analysis'])
 
 
 def hiring_dashboard():
@@ -1543,28 +1554,41 @@ def main():
     if 'page' not in st.session_state:
         st.session_state.page = "login"
     
-    # Initialize session state for AI features
+    # Initialize session state for AI features (Defensive Initialization)
     if 'parsed' not in st.session_state:
         st.session_state.parsed = {}
+    if 'full_text' not in st.session_state:
         st.session_state.full_text = ""
+    if 'excel_data' not in st.session_state:
         st.session_state.excel_data = None
+    if 'qa_answer' not in st.session_state:
         st.session_state.qa_answer = ""
+    if 'iq_output' not in st.session_state:
         st.session_state.iq_output = ""
+    if 'jd_fit_output' not in st.session_state:
         st.session_state.jd_fit_output = ""
         
         # Admin Dashboard specific lists
+    if 'admin_jd_list' not in st.session_state: 
         st.session_state.admin_jd_list = [] 
+    if 'resumes_to_analyze' not in st.session_state: 
         st.session_state.resumes_to_analyze = [] 
+    if 'admin_match_results' not in st.session_state: 
         st.session_state.admin_match_results = [] 
+    if 'resume_statuses' not in st.session_state: 
         st.session_state.resume_statuses = {} 
         
         # --- VENDOR STATE INIT ---
+    if 'vendors' not in st.session_state:
         st.session_state.vendors = []
+    if 'vendor_statuses' not in st.session_state:
         st.session_state.vendor_statuses = {}
         # --- END VENDOR STATE INIT ---
         
         # Candidate Dashboard specific lists
+    if 'candidate_jd_list' not in st.session_state:
         st.session_state.candidate_jd_list = []
+    if 'candidate_match_results' not in st.session_state:
         st.session_state.candidate_match_results = []
 
 
