@@ -1123,30 +1123,34 @@ def candidate_dashboard():
         # 1. Upload Section
         st.markdown("### 1. Upload Resume(s)")
         
-        resume_upload_type = st.radio(
-            "Upload Type", 
-            ["Single Resume", "Multiple Resumes"], 
-            key="resume_upload_type_candidate",
-            help="Choose 'Single Resume' if you only want to work with one file at a time."
-        )
+        # --- MODIFIED: Removed the radio button for upload type ---
+        # resume_upload_type = st.radio(
+        #     "Upload Type", 
+        #     ["Single Resume", "Multiple Resumes"], 
+        #     key="resume_upload_type_candidate",
+        #     help="Choose 'Single Resume' if you only want to work with one file at a time."
+        # )
 
-        uploaded_files = st.file_uploader(
-            "Choose PDF or DOCX file(s)", 
+        # --- MODIFIED: Uploader now only accepts a single file ---
+        uploaded_file = st.file_uploader( # Renamed from uploaded_files to uploaded_file
+            "Choose PDF or DOCX file", # Changed text to singular
             type=["pdf", "docx"], 
-            accept_multiple_files=(resume_upload_type == "Multiple Resumes"),
+            accept_multiple_files=False, # Set to False
             key='candidate_file_upload_main'
         )
 
         # Handle initial upload and store in a dedicated list
-        if uploaded_files is not None:
+        if uploaded_file is not None:
             # Normalize to list if a single file was uploaded
-            files_list = uploaded_files if isinstance(uploaded_files, list) else [uploaded_files]
+            # --- MODIFIED: Directly handle the single file object ---
+            files_list = [uploaded_file] 
             
             # Get current names in session state for comparison
             current_files_names = {f.name for f in st.session_state.candidate_uploaded_resumes}
             
             newly_uploaded = []
             for f in files_list:
+                # Check if file name already exists in the list to prevent duplicates on reruns
                 if f.name not in current_files_names:
                     newly_uploaded.append(f)
 
@@ -1325,9 +1329,9 @@ def candidate_dashboard():
                         
                         name_base = url.split('/jobs/view/')[-1].split('/')[0] if '/jobs/view/' in url else f"URL {count+1}"
                         # CRITICAL: Added explicit JD naming convention for LinkedIn URLs in Candidate JD list
-                        name = f"JD from URL: {name_base}" # <-- INDENTATION FIXED HERE
+                        name = f"JD from URL: {name_base}" 
                         if name in [item['name'] for item in st.session_state.candidate_jd_list]:
-                            name = f"JD from URL: {name_base} ({len(st.session_state.candidate_jd_list) + 1})" # <-- INDENTATION FIXED HERE
+                            name = f"JD from URL: {name_base} ({len(st.session_state.candidate_jd_list) + 1})" 
 
                         st.session_state.candidate_jd_list.append({"name": name, "content": jd_text})
                         
