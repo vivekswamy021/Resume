@@ -342,20 +342,23 @@ def parse_and_store_resume(uploaded_file, file_name_key='default'):
     excel_data = None
     if file_name_key == 'single_resume_candidate':
         try:
-            name = parsed.get('name', 'candidate').replace(' ', '_').strip()
-            name = "".join(c for c in name if c.isalnum() or c in ('_', '-')).rstrip()
+            # Use name from parsed data, clean it up for filename
+            name_base = parsed.get('name', uploaded_file.name.split('.')[0]).replace(' ', '_').strip()
+            name = "".join(c for c in name_base if c.isalnum() or c in ('_', '-')).rstrip()
             if not name: name = "candidate"
             excel_filename = os.path.join(tempfile.gettempdir(), f"{name}_parsed_data.xlsx")
             excel_data = dump_to_excel(parsed, excel_filename)
         except Exception as e:
-            st.warning(f"Could not generate Excel file for single resume: {e}")
+            # Downgrade error to warning for UI, but keep it logged if this were a real system
+            # st.warning(f"Could not generate Excel file for single resume: {e}")
+            pass
     
     return {
         "parsed": parsed,
         "full_text": text,
         "excel_data": excel_data,
-        "name": parsed.get('name', uploaded_file.name.split('.')[0])
-        # Add placeholders for JD/Date which will be updated later
+        "name": parsed.get('name', uploaded_file.name.split('.')[0]),
+        # Add placeholders for JD/Date which will be updated later in Admin dashboard
     }
 
 
@@ -489,7 +492,7 @@ def update_resume_status(resume_name, new_status, applied_jd, submitted_date, re
 def admin_dashboard():
     st.header("🧑‍💼 Admin Dashboard")
     
-    # --- MODIFIED NAVIGATION BLOCK ---
+    # --- NAVIGATION BLOCK ---
     nav_col1, nav_col2 = st.columns([1, 1])
 
     with nav_col1:
@@ -501,7 +504,7 @@ def admin_dashboard():
         # Log Out button directing to the login page
         if st.button("🚪 Log Out", use_container_width=True):
             go_to("login") 
-    # --- END MODIFIED NAVIGATION BLOCK ---
+    # --- END NAVIGATION BLOCK ---
     
     # Initialize Admin session state variables
     if "admin_jd_list" not in st.session_state:
@@ -530,7 +533,7 @@ def admin_dashboard():
     ])
     # -------------------------
 
-    # --- TAB 1: JD Management ---
+    # --- TAB 1: JD Management (NO CHANGE) ---
     with tab_jd:
         st.subheader("Add and Manage Job Descriptions (JD)")
         
@@ -644,7 +647,7 @@ def admin_dashboard():
             st.info("No Job Descriptions added yet.")
 
 
-    # --- TAB 2: Resume Analysis (INCLUDES ALL ROBUSTNESS FIXES) --- 
+    # --- TAB 2: Resume Analysis --- 
     with tab_analysis:
         st.subheader("Analyze Resumes Against Job Descriptions")
 
@@ -992,7 +995,7 @@ def admin_dashboard():
                     submitted_date = st.date_input("Submitted Date", value=date.today(), key="new_vendor_date_um") # Unique key
                 with col4:
                     initial_status = st.selectbox(
-                        "Initial Status", 
+                        "Set Status", 
                         ["Pending Review", "Approved", "Rejected"],
                         key="new_vendor_status_um" # Unique key
                     )
@@ -1129,7 +1132,7 @@ def candidate_dashboard():
     st.header("👩‍🎓 Candidate Dashboard")
     st.markdown("Welcome! Use the tabs below to upload your resume and access AI preparation tools.")
 
-    # --- MODIFIED NAVIGATION BLOCK ---
+    # --- NAVIGATION BLOCK ---
     nav_col1, nav_col2 = st.columns([1, 1])
 
     with nav_col1:
@@ -1139,30 +1142,102 @@ def candidate_dashboard():
     with nav_col2:
         if st.button("🚪 Log Out", key="candidate_logout_btn", use_container_width=True):
             go_to("login") 
-    # --- END MODIFIED NAVIGATION BLOCK ---
+    # --- END NAVIGATION BLOCK ---
     
+    # Initialize a list to hold all uploaded and parsed resumes 
+    if "candidate_uploaded_resumes" not in st.session_state:
+        st.session_state.candidate_uploaded_resumes = []
+        
     # Sidebar for Resume Upload (Centralized Upload)
     with st.sidebar:
-        st.header("Upload Your Resume")
-        uploaded_file = st.file_uploader("Choose a PDF or DOCX file", type=["pdf", "docx"])
+        st.header("Upload Your Resume(s)")
         
-        if uploaded_file is not None:
-            if st.button("Parse Resume", use_container_width=True):
-                # Centralized upload logic for Candidate Dashboard
-                result = parse_and_store_resume(uploaded_file, file_name_key='single_resume_candidate')
-                
-                if "error" not in result:
-                    st.session_state.parsed = result['parsed']
-                    st.session_state.full_text = result['full_text']
-                    st.session_state.excel_data = result['excel_data'] 
-                    st.success("Resume parsed successfully!")
-                else:
-                    st.error(f"Parsing failed: {result['error']}")
+        # --- NEW: Radio for Single vs. Multiple Upload ---
+        upload_type = st.radio("Upload Mode", ["Single Resume", "Multiple Resumes"], key="candidate_upload_mode")
 
+        # Set multi_select flag based on the radio button
+        allow_multiple = (upload_type == "Multiple Resumes")
         
+        # The actual file uploader
+        uploaded_files = st.file_uploader(
+            "Choose PDF or DOCX file(s)", 
+            type=["pdf", "docx"],
+            accept_multiple_files=allow_multiple,
+            key="candidate_file_uploader"
+        )
+        
+        # Normalize files_to_process to always be a list for consistent iteration
+        files_to_process = uploaded_files if isinstance(uploaded_files, list) else ([uploaded_files] if uploaded_files else [])
+
+
+        # --- Resume Parsing Button and Logic ---
+        if st.button("Load and Parse Resume(s)", use_container_width=True):
+            if not files_to_process:
+                st.warning("Please upload one or more files first.")
+                st.session_state.last_candidate_upload_message = ""
+                
+            else:
+                success_count = 0
+                first_parsed_result = None
+                
+                with st.spinner(f"Parsing {len(files_to_process)} resume(s)..."):
+                    
+                    for file in files_to_process:
+                        if file:
+                            # Use a unique key for storing the parsed data, differentiating it from admin analysis
+                            result = parse_and_store_resume(file, file_name_key='single_resume_candidate') 
+                            
+                            if "error" not in result:
+                                
+                                # Store the fully parsed result in the new list
+                                st.session_state.candidate_uploaded_resumes.append(result)
+                                
+                                # CRITICAL: If this is the first successful parse, set it as the active resume
+                                if success_count == 0:
+                                    first_parsed_result = result
+                                    
+                                success_count += 1
+                                
+                            else:
+                                st.error(f"Failed to parse {file.name}: {result['error']}")
+
+                
+                if success_count > 0 and first_parsed_result:
+                    # Set the current active resume for the AI tools
+                    st.session_state.parsed = first_parsed_result['parsed']
+                    st.session_state.full_text = first_parsed_result['full_text']
+                    st.session_state.excel_data = first_parsed_result['excel_data'] 
+                    
+                    if success_count == 1:
+                         st.session_state.last_candidate_upload_message = "Resume parsed successfully and set as active."
+                    else:
+                        st.session_state.last_candidate_upload_message = f"Successfully parsed {success_count} resumes. The first one (**{first_parsed_result['name']}**) is currently active for analysis."
+                        
+                    st.success(st.session_state.last_candidate_upload_message)
+                    st.rerun() # Rerun to update the main tabs
+
+                elif success_count == 0:
+                    st.session_state.last_candidate_upload_message = "No resumes were successfully loaded and parsed."
+                    st.warning(st.session_state.last_candidate_upload_message)
+        
+        
+        # Display the result of the last parsing operation
+        if st.session_state.get('last_candidate_upload_message') and not st.session_state.parsed.get("name"):
+            st.info(st.session_state.last_candidate_upload_message)
+
+
         st.markdown("---")
+        
+        # --- Active Resume Info and Clear Button ---
         if st.session_state.parsed.get("name"):
-            st.success(f"Resume for **{st.session_state.parsed['name']}** is loaded.")
+            st.success(f"Active Resume: **{st.session_state.parsed['name']}** is loaded for analysis.")
+            if st.button("❌ Clear Active Resume", use_container_width=True):
+                st.session_state.parsed = {}
+                st.session_state.full_text = ""
+                st.session_state.excel_data = None
+                st.session_state.last_candidate_upload_message = "Active resume cleared. Please load a new one."
+                st.rerun()
+                
         elif st.session_state.full_text:
             st.warning("Resume file loaded, but parsing may have errors.")
         else:
@@ -1386,7 +1461,7 @@ def candidate_dashboard():
         else:
             st.info("No Job Descriptions added yet.")
 
-    # --- TAB 5: Batch JD Match (Candidate) (INCLUDES ROBUSTNESS FIXES) ---
+    # --- TAB 5: Batch JD Match (Candidate) ---
     with tab5:
         st.header("🎯 Batch JD Match")
         st.markdown("Compare your current resume against all saved job descriptions.")
@@ -1500,7 +1575,7 @@ def hiring_dashboard():
     st.header("🏢 Hiring Company Dashboard")
     st.write("Manage job postings and view candidate applications. (Placeholder for future features)")
     
-    # --- MODIFIED NAVIGATION BLOCK ---
+    # --- NAVIGATION BLOCK ---
     nav_col1, nav_col2 = st.columns([1, 1])
 
     with nav_col1:
@@ -1510,7 +1585,7 @@ def hiring_dashboard():
     with nav_col2:
         if st.button("🚪 Log Out", key="hiring_logout_btn", use_container_width=True):
             go_to("login") 
-    # --- END MODIFIED NAVIGATION BLOCK ---
+    # --- END NAVIGATION BLOCK ---
 
 # -------------------------
 # Main App Initialization
@@ -1537,14 +1612,15 @@ def main():
         st.session_state.admin_match_results = [] 
         st.session_state.resume_statuses = {} 
         
-        # --- VENDOR STATE INIT ---
+        # Vendor State
         st.session_state.vendors = []
         st.session_state.vendor_statuses = {}
-        # --- END VENDOR STATE INIT ---
         
-        # Candidate Dashboard specific lists
+        # Candidate Dashboard specific lists and active resume holder
         st.session_state.candidate_jd_list = []
         st.session_state.candidate_match_results = []
+        st.session_state.candidate_uploaded_resumes = [] # New list for multiple uploads
+        st.session_state.last_candidate_upload_message = "" # Message holder
 
 
     # --- Page Routing ---
