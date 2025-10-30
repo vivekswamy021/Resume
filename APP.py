@@ -23,7 +23,7 @@ GROQ_MODEL = "llama-3.1-8b-instant"
 
 # Options for LLM functions
 section_options = ["name", "email", "phone", "skills", "education", "experience", "certifications", "projects", "strength", "personal_details", "github", "linkedin", "full resume"]
-question_section_options = ["skills","experience", "certifications", "projects", "education"] # Fixed a small typo here for consistency
+question_section_options = ["skills","experience", "certifications", "projects", "education"] 
 answer_types = [("Point-wise", "points"), ("Detailed", "detailed"), ("Key Points", "key")]
 
 
@@ -1292,15 +1292,15 @@ def candidate_dashboard():
             if st.session_state.get('qa_answer'):
                 st.text_area("Answer", st.session_state.qa_answer, height=150)
 
-    # --- TAB 3: Interview Prep (MODIFIED) ---
+    # --- TAB 3: Interview Prep (MODIFIED - FIX APPLIED HERE) ---
     with tab3:
         st.header("Interview Preparation Tools")
         if not is_resume_parsed or "error" in st.session_state.parsed:
             st.warning("Please upload and successfully parse a resume first.")
         else:
             if 'iq_output' not in st.session_state: st.session_state.iq_output = ""
-            if 'interview_qa' not in st.session_state: st.session_state.interview_qa = [] # NEW
-            if 'evaluation_report' not in st.session_state: st.session_state.evaluation_report = "" # NEW
+            if 'interview_qa' not in st.session_state: st.session_state.interview_qa = [] 
+            if 'evaluation_report' not in st.session_state: st.session_state.evaluation_report = "" 
             
             st.subheader("1. Generate Interview Questions")
             section_choice = st.selectbox("Select Section", question_section_options, key='iq_section_c')
@@ -1311,7 +1311,12 @@ def candidate_dashboard():
                         raw_questions_response = generate_interview_questions(st.session_state.parsed, section_choice)
                         st.session_state.iq_output = raw_questions_response
                         
-                        # Process raw text into structured Q&A list (NEW)
+                        # --- FIX START ---
+                        # Clear previous questions/answers and evaluation report before generating new ones
+                        st.session_state.interview_qa = [] 
+                        st.session_state.evaluation_report = "" 
+                        
+                        # Process raw text into structured Q&A list
                         q_list = []
                         current_level = ""
                         for line in raw_questions_response.splitlines():
@@ -1322,12 +1327,13 @@ def candidate_dashboard():
                                 question_text = line[line.find(':') + 1:].strip()
                                 q_list.append({
                                     "question": f"({current_level}) {question_text}",
-                                    "answer": "",
+                                    "answer": "", # Ensure the answer is empty for new questions
                                     "level": current_level
                                 })
                                 
                         st.session_state.interview_qa = q_list
-                        st.session_state.evaluation_report = "" # Clear previous report
+                        # --- FIX END ---
+                        
                         st.success(f"Generated {len(q_list)} questions based on your **{section_choice}** section.")
                         
                     except Exception as e:
@@ -1336,7 +1342,7 @@ def candidate_dashboard():
                         st.session_state.interview_qa = []
 
 
-            # --- NEW INTERACTIVE Q&A SECTION ---
+            # --- INTERACTIVE Q&A SECTION ---
             if st.session_state.get('interview_qa'):
                 st.markdown("---")
                 st.subheader("2. Practice and Record Answers")
@@ -1347,25 +1353,25 @@ def candidate_dashboard():
                     # Display each question and provide a text area for the answer
                     for i, qa_item in enumerate(st.session_state.interview_qa):
                         st.markdown(f"**Question {i+1}:** {qa_item['question']}")
-                        # Set initial value from session state to persist answers during Reruns
-                        # Use the actual answer in session state as default value for persistence
+                        
+                        # The key is crucial here for state management.
                         answer = st.text_area(
                             f"Your Answer for Q{i+1}", 
-                            value=st.session_state.interview_qa[i]['answer'], # Use stored answer
+                            # Use stored answer value to persist typing *within* the form session
+                            value=st.session_state.interview_qa[i]['answer'], 
                             height=100,
                             key=f'answer_q_{i}',
                             label_visibility='collapsed'
                         )
                         # Immediately update the session state item (this happens on form submit)
-                        st.session_state.interview_qa[i]['answer'] = answer # This ensures the value persists within the form structure
+                        # This line ensures that when the form submits, the updated answer is written back to the list
+                        st.session_state.interview_qa[i]['answer'] = answer 
                         st.markdown("---") # Visual separator between questions
                         
                     # Submission button
                     submit_button = st.form_submit_button("Submit & Evaluate Answers", use_container_width=True)
 
                     if submit_button:
-                        # Re-read all answers on submit (optional, but good practice if form reruns are tricky)
-                        # The code above already stores the answer value in st.session_state.interview_qa[i]['answer'] on submit.
                         
                         # Check if all answers are filled
                         if all(item['answer'].strip() for item in st.session_state.interview_qa):
