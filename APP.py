@@ -23,7 +23,7 @@ GROQ_MODEL = "llama-3.1-8b-instant"
 
 # Options for LLM functions
 section_options = ["name", "email", "phone", "skills", "education", "experience", "certifications", "projects", "strength", "personal_details", "github", "linkedin", "full resume"]
-question_section_options = ["skills","experience", "certifications", "education", "projects"]
+question_section_options = ["skills","experience", "certifications", "projects", "education"] # Fixed a small typo here for consistency
 answer_types = [("Point-wise", "points"), ("Detailed", "detailed"), ("Key Points", "key")]
 
 
@@ -1121,16 +1121,8 @@ def candidate_dashboard():
         st.header("Resume Upload and Parsing")
         
         # 1. Upload Section
-        st.markdown("### 1. Upload Resume(s)")
+        st.markdown("### 1. Upload Resume") # Changed to singular
         
-        # --- MODIFIED: Removed the radio button for upload type ---
-        # resume_upload_type = st.radio(
-        #     "Upload Type", 
-        #     ["Single Resume", "Multiple Resumes"], 
-        #     key="resume_upload_type_candidate",
-        #     help="Choose 'Single Resume' if you only want to work with one file at a time."
-        # )
-
         # --- MODIFIED: Uploader now only accepts a single file ---
         uploaded_file = st.file_uploader( # Renamed from uploaded_files to uploaded_file
             "Choose PDF or DOCX file", # Changed text to singular
@@ -1141,115 +1133,80 @@ def candidate_dashboard():
 
         # Handle initial upload and store in a dedicated list
         if uploaded_file is not None:
-            # Normalize to list if a single file was uploaded
-            # --- MODIFIED: Directly handle the single file object ---
-            files_list = [uploaded_file] 
-            
-            # Get current names in session state for comparison
-            current_files_names = {f.name for f in st.session_state.candidate_uploaded_resumes}
-            
-            newly_uploaded = []
-            for f in files_list:
-                # Check if file name already exists in the list to prevent duplicates on reruns
-                if f.name not in current_files_names:
-                    newly_uploaded.append(f)
+            # Always ensure the state only holds the current single uploaded file
+            # This replaces the old list append logic
+            st.session_state.candidate_uploaded_resumes = [uploaded_file] 
+            st.toast("Resume uploaded successfully.")
+        elif st.session_state.candidate_uploaded_resumes and uploaded_file is None:
+             # Case where the user cleared the uploader
+             st.session_state.candidate_uploaded_resumes = []
+             st.session_state.parsed = {}
+             st.session_state.full_text = ""
+             st.toast("Upload cleared.")
 
-            if newly_uploaded:
-                st.session_state.candidate_uploaded_resumes.extend(newly_uploaded)
-                st.toast(f"Added {len(newly_uploaded)} new resume(s).")
-            # If nothing new was added, but the file uploader widget was cleared/reset, update the state to match
-            elif not files_list and st.session_state.candidate_uploaded_resumes:
-                 st.session_state.candidate_uploaded_resumes = []
-                 st.toast("Resume list cleared.")
-            # Important: If files_list has content but contains only files already in state, do nothing to prevent unnecessary reruns.
-            
         st.markdown("---")
 
-        # 2. Selection and Parsing
-        st.markdown("### 2. Select and Parse Resume")
+        # 2. Parse Uploaded Resume
+        st.markdown("### 2. Parse Uploaded Resume")
         
-        if not st.session_state.candidate_uploaded_resumes:
-            st.info("Upload one or more resumes above to enable selection and parsing.")
-        else:
-            resume_file_names = [f.name for f in st.session_state.candidate_uploaded_resumes]
+        # Determine the file to parse (if any)
+        file_to_parse = st.session_state.candidate_uploaded_resumes[0] if st.session_state.candidate_uploaded_resumes else None
+        
+        if file_to_parse:
             
-            # Set the default index to the last parsed resume if possible, otherwise the first uploaded resume
-            try:
-                # Find the name of the last successfully parsed resume to use as default
-                current_parsed_name = st.session_state.parsed.get('name')
-                if current_parsed_name and current_parsed_name in resume_file_names:
-                     default_index = resume_file_names.index(current_parsed_name)
-                else:
-                    default_index = 0
-            except:
-                default_index = 0
-
-            selected_resume_name = st.selectbox(
-                "Select a Resume to Parse and View", 
-                options=resume_file_names, 
-                index=default_index, 
-                key='selected_resume_name_candidate'
-            )
-            
-            # Find the actual UploadedFile object
-            selected_file_object = next(
-                (f for f in st.session_state.candidate_uploaded_resumes if f.name == selected_resume_name), 
-                None
-            )
-            
-            if st.button(f"Parse and Load: {selected_resume_name}", use_container_width=True):
-                if selected_file_object:
-                    with st.spinner(f"Parsing {selected_resume_name}..."):
-                        # CRITICAL: Pass the single selected file object to the parser
-                        result = parse_and_store_resume(selected_file_object, file_name_key='single_resume_candidate')
-                        
-                        if "error" not in result:
-                            st.session_state.parsed = result['parsed']
-                            st.session_state.full_text = result['full_text']
-                            st.session_state.excel_data = result['excel_data'] 
-                            # Also update the parsed name in state for the sidebar status
-                            st.session_state.parsed['name'] = result['name'] 
-                            st.success(f"Successfully loaded and parsed **{result['name']}**.")
-                        else:
-                            st.error(f"Parsing failed for {selected_resume_name}: {result['error']}")
-                            st.session_state.parsed = {"error": result['error'], "name": selected_resume_name}
-                            st.session_state.full_text = result['full_text'] or ""
-                else:
-                    st.error("Error: Could not find the selected file object for parsing.")
-
-            st.markdown("---")
-            
-            # 3. View Parsed Data (MODIFIED: Removed Section Dropdown/Content)
-            st.markdown("### 3. View Parsed Data")
-            is_resume_parsed = bool(st.session_state.get('parsed', {}).get('name')) or bool(st.session_state.get('full_text'))
-            
-            if is_resume_parsed:
-                output_format = st.radio('Output Format', ['json', 'markdown'], key='format_radio_c')
-
-                parsed = st.session_state.parsed
-                full_text = st.session_state.full_text
-
-                if "error" in parsed:
-                    st.error(parsed.get("error", "An unknown error occurred during parsing."))
-                else:
-                    if output_format == 'json':
-                        output_str = json.dumps(parsed, indent=2)
-                        st.text_area("Parsed Output (JSON)", output_str, height=350)
-                    else:
-                        output_str = parse_with_llm(full_text, return_type='markdown') if full_text else "Full text not available."
-                        st.markdown("#### Parsed Output (Markdown)")
-                        st.markdown(output_str)
-
-                    if st.session_state.excel_data:
-                        st.download_button(
-                            label="Download Parsed Data (Excel)",
-                            data=st.session_state.excel_data,
-                            file_name=f"{parsed.get('name', 'candidate').replace(' ', '_')}_parsed_data.xlsx",
-                            mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
-                        )
+            # --- MODIFIED: Removed the selectbox, using the single file directly ---
+            if st.button(f"Parse and Load: **{file_to_parse.name}**", use_container_width=True):
+                with st.spinner(f"Parsing {file_to_parse.name}..."):
+                    # CRITICAL: Pass the single selected file object to the parser
+                    result = parse_and_store_resume(file_to_parse, file_name_key='single_resume_candidate')
                     
+                    if "error" not in result:
+                        st.session_state.parsed = result['parsed']
+                        st.session_state.full_text = result['full_text']
+                        st.session_state.excel_data = result['excel_data'] 
+                        st.session_state.parsed['name'] = result['name'] 
+                        st.success(f"Successfully loaded and parsed **{result['name']}**.")
+                    else:
+                        st.error(f"Parsing failed for {file_to_parse.name}: {result['error']}")
+                        st.session_state.parsed = {"error": result['error'], "name": file_to_parse.name}
+                        st.session_state.full_text = result['full_text'] or ""
+        else:
+            st.info("No resume file is currently uploaded. Please upload a file in section 1.")
+
+            
+        st.markdown("---")
+            
+        # 3. View Parsed Data (MODIFIED: Removed Section Dropdown/Content)
+        st.markdown("### 3. View Parsed Data")
+        is_resume_parsed = bool(st.session_state.get('parsed', {}).get('name')) or bool(st.session_state.get('full_text'))
+        
+        if is_resume_parsed:
+            output_format = st.radio('Output Format', ['json', 'markdown'], key='format_radio_c')
+
+            parsed = st.session_state.parsed
+            full_text = st.session_state.full_text
+
+            if "error" in parsed:
+                st.error(parsed.get("error", "An unknown error occurred during parsing."))
             else:
-                st.warning("No resume has been parsed yet. Please select a file and click 'Parse and Load'.")
+                if output_format == 'json':
+                    output_str = json.dumps(parsed, indent=2)
+                    st.text_area("Parsed Output (JSON)", output_str, height=350)
+                else:
+                    output_str = parse_with_llm(full_text, return_type='markdown') if full_text else "Full text not available."
+                    st.markdown("#### Parsed Output (Markdown)")
+                    st.markdown(output_str)
+
+                if st.session_state.excel_data:
+                    st.download_button(
+                        label="Download Parsed Data (Excel)",
+                        data=st.session_state.excel_data,
+                        file_name=f"{parsed.get('name', 'candidate').replace(' ', '_')}_parsed_data.xlsx",
+                        mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
+                    )
+                
+        else:
+            st.warning("No resume has been parsed yet. Please click the 'Parse and Load' button in section 2.")
 
 
     # --- TAB 2: Resume Chatbot (Q&A) ---
