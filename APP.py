@@ -1220,11 +1220,7 @@ def candidate_dashboard():
             is_resume_parsed = bool(st.session_state.get('parsed', {}).get('name')) or bool(st.session_state.get('full_text'))
             
             if is_resume_parsed:
-                col1, col2 = st.columns(2)
-                with col1:
-                    output_format = st.radio('Output Format', ['json', 'markdown'], key='format_radio_c')
-                with col2:
-                    section = st.selectbox('Select Section to View', section_options, key='section_select_c')
+                output_format = st.radio('Output Format', ['json', 'markdown'], key='format_radio_c')
 
                 parsed = st.session_state.parsed
                 full_text = st.session_state.full_text
@@ -1248,17 +1244,6 @@ def candidate_dashboard():
                             mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
                         )
                     
-                    section_content_str = ""
-                    if section == "full resume":
-                        section_content_str = full_text
-                    elif section in parsed:
-                        section_val = parsed[section]
-                        section_content_str = json.dumps(section_val, indent=2) if isinstance(section_val, (list, dict)) else str(section_val)
-                    else:
-                        section_content_str = f"Section '{section}' not found or is empty."
-
-                    st.text_area("Selected Section Content", section_content_str, height=200)
-
             else:
                 st.warning("No resume has been parsed yet. Please select a file and click 'Parse and Load'.")
 
@@ -1339,10 +1324,16 @@ def candidate_dashboard():
                             jd_text = extract_jd_from_linkedin_url(url)
                         
                         name_base = url.split('/jobs/view/')[-1].split('/')[0] if '/jobs/view/' in url else f"URL {count+1}"
-                        st.session_state.candidate_jd_list.append({"name": f"JD from URL: {name_base}", "content": jd_text})
-                        if not jd_text.startswith("[Error"):
-                            count += 1
+                            # CRITICAL: Added explicit JD naming convention for LinkedIn URLs in Candidate JD list
+                            name = f"JD from URL: {name_base}"
+                            if name in [item['name'] for item in st.session_state.candidate_jd_list]:
+                                name = f"JD from URL: {name_base} ({len(st.session_state.candidate_jd_list) + 1})"
+
+                            st.session_state.candidate_jd_list.append({"name": name, "content": jd_text})
                             
+                            if not jd_text.startswith("[Error"):
+                                count += 1
+                                
                     if count > 0:
                         st.success(f"✅ {count} JD(s) added successfully! Check the display below for the extracted content.")
                     else:
