@@ -530,7 +530,7 @@ def admin_dashboard():
     ])
     # -------------------------
 
-    # --- TAB 1: JD Management (NO CHANGE) ---
+    # --- TAB 1: JD Management ---
     with tab_jd:
         st.subheader("Add and Manage Job Descriptions (JD)")
         
@@ -992,7 +992,7 @@ def admin_dashboard():
                     submitted_date = st.date_input("Submitted Date", value=date.today(), key="new_vendor_date_um") # Unique key
                 with col4:
                     initial_status = st.selectbox(
-                        "Set Status", 
+                        "Initial Status", 
                         ["Pending Review", "Approved", "Rejected"],
                         key="new_vendor_status_um" # Unique key
                     )
