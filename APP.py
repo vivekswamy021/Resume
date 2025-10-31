@@ -5,10 +5,10 @@ import docx
 import openpyxl
 import json
 import tempfile
+import re
+import traceback
 from groq import Groq
 from gtts import gTTS 
-import traceback
-import re
 from dotenv import load_dotenv 
 from datetime import date 
 
@@ -34,15 +34,25 @@ load_dotenv()
 GROQ_API_KEY = os.getenv('GROQ_API_KEY')
 
 if not GROQ_API_KEY:
+    # Use st.warning instead of st.error/st.stop in the final presentation if the goal is to show the structure
+    # However, for actual functionality, this check is critical.
     st.error(
         "🚨 FATAL ERROR: GROQ_API_KEY environment variable not set. "
         "Please ensure a '.env' file exists in the script directory with this line: "
         "GROQ_API_KEY=\"YOUR_KEY_HERE\""
     )
-    st.stop()
-
-# Initialize Groq Client
-client = Groq(api_key=GROQ_API_KEY)
+    # st.stop() # Commented out for demonstration purposes if running without a key, but necessary for real use.
+    # Initialize client to a placeholder object if stopping is not desired, to avoid crashing later
+    class MockGroqClient:
+        def chat(self):
+            class Completions:
+                def create(self, **kwargs):
+                    raise Exception("GROQ_API_KEY not set. Cannot call LLM.")
+            return Completions()
+    client = MockGroqClient()
+else:
+    # Initialize Groq Client
+    client = Groq(api_key=GROQ_API_KEY)
 
 
 # -------------------------
@@ -52,14 +62,14 @@ def go_to(page_name):
     """Changes the current page in Streamlit's session state."""
     st.session_state.page = page_name
 
-# --- NEW FUNCTION FOR INTERVIEW STATE CLEARING ---
+# Function to clear interview state variables (FIX 1)
 def clear_interview_state():
     """Clears all generated questions, answers, and the evaluation report."""
     st.session_state.interview_qa = []
     st.session_state.iq_output = ""
     st.session_state.evaluation_report = ""
     st.toast("Practice answers cleared.")
-# --- END NEW FUNCTION ---
+
 
 # -------------------------
 # CORE LOGIC: FILE HANDLING AND EXTRACTION
@@ -115,6 +125,9 @@ def parse_with_llm(text, return_type='json'):
     """Sends resume text to the LLM for structured information extraction."""
     if text.startswith("Error"):
         return {"error": text, "raw_output": ""}
+        
+    if not GROQ_API_KEY:
+        return {"error": "GROQ_API_KEY is not set. Cannot run LLM parsing.", "raw_output": ""}
 
     prompt = f"""Extract the following information from the resume in structured JSON.
     Ensure all relevant details for each category are captured.
@@ -232,6 +245,9 @@ def extract_jd_from_linkedin_url(url: str) -> str:
 
 def evaluate_jd_fit(job_description, parsed_json):
     """Evaluates how well a resume fits a given job description, including section-wise scores."""
+    if not GROQ_API_KEY:
+        return "Overall Fit Score: [0]/10\n\n--- Section Match Analysis ---\nSkills Match: [0]%\nExperience Match: [0]%\nEducation Match: [0]%\n\nStrengths/Matches:\n- Cannot run LLM analysis due to missing GROQ_API_KEY.\n\nGaps/Areas for Improvement:\n- GROQ_API_KEY is not set.\n\nOverall Summary: Cannot run LLM analysis."
+        
     if not job_description.strip(): return "Please paste a job description."
     
     relevant_resume_data = {
@@ -281,10 +297,12 @@ def evaluate_jd_fit(job_description, parsed_json):
     )
     return response.choices[0].message.content.strip()
 
-# --- NEW FUNCTION FOR INTERVIEW EVALUATION ---
+
 def evaluate_interview_answers(qa_list, parsed_json):
     """Evaluates the user's answers against the resume content and provides feedback."""
-    
+    if not GROQ_API_KEY:
+        return "## Evaluation Results\n\n### LLM Error\nScore: 0/10\nFeedback:\n- **Clarity & Accuracy:** Cannot run LLM analysis due to missing GROQ_API_KEY.\n\n---\n\n## Final Assessment\nTotal Score: 0/10\nOverall Summary: Missing API Key."
+        
     resume_summary = json.dumps(parsed_json, indent=2)
     
     qa_summary = "\n---\n".join([
@@ -335,11 +353,62 @@ def evaluate_interview_answers(qa_list, parsed_json):
         temperature=0.3
     )
     return response.choices[0].message.content.strip()
-# --- END NEW FUNCTION ---
 
+
+def qa_on_resume(question):
+    """Chatbot for Resume (Q&A) using LLM."""
+    if not GROQ_API_KEY:
+        return "Cannot run LLM Q&A due to missing GROQ_API_KEY."
+
+    parsed_json = st.session_state.parsed
+    full_text = st.session_state.full_text
+    prompt = f"""Given the following resume information:
+    Resume Text: {full_text}
+    Parsed Resume Data (JSON): {json.dumps(parsed_json, indent=2)}
+    Answer the following question about the resume concisely and directly.
+    If the information is not present, state that clearly.
+    Question: {question}
+    """
+    response = client.chat.completions.create(model=GROQ_MODEL, messages=[{"role": "user", "content": prompt}], temperature=0.4)
+    return response.choices[0].message.content.strip()
+
+def generate_interview_questions(parsed_json, section):
+    """Generates categorized interview questions using LLM."""
+    if not GROQ_API_KEY:
+        return "[Error]\nQ1: Cannot generate questions due to missing GROQ_API_KEY. Please set the environment variable."
+
+    section_title = section.replace("_", " ").title()
+    section_content = parsed_json.get(section, "")
+    if isinstance(section_content, (list, dict)):
+        section_content = json.dumps(section_content, indent=2)
+    elif not isinstance(section_content, str):
+        section_content = str(section_content)
+
+    if not section_content.strip():
+        return f"No significant content found for the '{section_title}' section in the parsed resume. Please select a section with relevant data to generate questions."
+
+    prompt = f"""Based on the following {section_title} section from the resume: {section_content}
+Generate 3 interview questions each for these levels: Generic, Basic, Intermediate, Difficult.
+**IMPORTANT: Format the output strictly as follows, with level headers and questions starting with 'Qx:':**
+[Generic]
+Q1: Question text...
+Q2: Question text...
+Q3: Question text...
+[Basic]
+Q1: Question text...
+...
+[Difficult]
+Q3: Question text...
+    """
+    response = client.chat.completions.create(
+        model=GROQ_MODEL, 
+        messages=[{"role": "user", "content": prompt}], 
+        temperature=0.5
+    )
+    return response.choices[0].message.content.strip()
 
 # -------------------------
-# Utility Functions
+# Utility Functions (Continued)
 # -------------------------
 def dump_to_excel(parsed_json, filename):
     """Dumps parsed JSON data to an Excel file."""
@@ -378,22 +447,17 @@ def dump_to_excel(parsed_json, filename):
 def parse_and_store_resume(uploaded_file, file_name_key='default'):
     """
     Handles file upload, parsing, and stores results.
-    CRITICAL FIX: Added explicit check for UploadedFile type.
     """
     
-    # Check if the input is actually a single Streamlit UploadedFile object
     if not isinstance(uploaded_file, UploadedFile):
-        # This should theoretically not happen if the calling loops are correct, 
-        # but serves as a final defense against the list error.
         st.error(f"Internal Error: Expected a single file, but received object type: {type(uploaded_file)}. Cannot parse.")
         return {"error": "Invalid file input type passed to parser.", "full_text": ""}
 
     temp_dir = tempfile.mkdtemp()
     
-    # This is the line that caused the error previously if uploaded_file was a list.
     temp_path = os.path.join(temp_dir, uploaded_file.name) 
     with open(temp_path, "wb") as f:
-        f.write(uploaded_file.getbuffer()) # This is the second line that would crash.
+        f.write(uploaded_file.getbuffer())
 
     file_type = get_file_type(temp_path)
     text = extract_content(file_type, temp_path)
@@ -416,7 +480,6 @@ def parse_and_store_resume(uploaded_file, file_name_key='default'):
             excel_filename = os.path.join(tempfile.gettempdir(), f"{name}_parsed_data.xlsx")
             excel_data = dump_to_excel(parsed, excel_filename)
         except Exception as e:
-            # We skip the Excel warning here as it's not critical
             pass
     
     return {
@@ -425,53 +488,6 @@ def parse_and_store_resume(uploaded_file, file_name_key='default'):
         "excel_data": excel_data,
         "name": parsed.get('name', uploaded_file.name.split('.')[0])
     }
-
-
-def qa_on_resume(question):
-    """Chatbot for Resume (Q&A) using LLM."""
-    parsed_json = st.session_state.parsed
-    full_text = st.session_state.full_text
-    prompt = f"""Given the following resume information:
-    Resume Text: {full_text}
-    Parsed Resume Data (JSON): {json.dumps(parsed_json, indent=2)}
-    Answer the following question about the resume concisely and directly.
-    If the information is not present, state that clearly.
-    Question: {question}
-    """
-    response = client.chat.completions.create(model=GROQ_MODEL, messages=[{"role": "user", "content": prompt}], temperature=0.4)
-    return response.choices[0].message.content.strip()
-
-def generate_interview_questions(parsed_json, section):
-    """Generates categorized interview questions using LLM."""
-    section_title = section.replace("_", " ").title()
-    section_content = parsed_json.get(section, "")
-    if isinstance(section_content, (list, dict)):
-        section_content = json.dumps(section_content, indent=2)
-    elif not isinstance(section_content, str):
-        section_content = str(section_content)
-
-    if not section_content.strip():
-        return f"No significant content found for the '{section_title}' section in the parsed resume. Please select a section with relevant data to generate questions."
-
-    prompt = f"""Based on the following {section_title} section from the resume: {section_content}
-Generate 3 interview questions each for these levels: Generic, Basic, Intermediate, Difficult.
-**IMPORTANT: Format the output strictly as follows, with level headers and questions starting with 'Qx:':**
-[Generic]
-Q1: Question text...
-Q2: Question text...
-Q3: Question text...
-[Basic]
-Q1: Question text...
-...
-[Difficult]
-Q3: Question text...
-    """
-    response = client.chat.completions.create(
-        model=GROQ_MODEL, 
-        messages=[{"role": "user", "content": prompt}], 
-        temperature=0.5
-    )
-    return response.choices[0].message.content.strip()
 
 
 # -------------------------
@@ -1317,14 +1333,14 @@ def candidate_dashboard():
             
             st.subheader("1. Generate Interview Questions")
             
-            # --- FIX 2: Clear state on selectbox change ---
+            # --- FIX 1: Clear state on selectbox change ---
             section_choice = st.selectbox(
                 "Select Section", 
                 question_section_options, 
                 key='iq_section_c',
                 on_change=clear_interview_state # Call function to reset state
             )
-            # --- END FIX 2 ---
+            # --- END FIX 1 ---
             
             if st.button("Generate Interview Questions", key='iq_btn_c'):
                 with st.spinner("Generating questions..."):
@@ -1332,7 +1348,7 @@ def candidate_dashboard():
                         raw_questions_response = generate_interview_questions(st.session_state.parsed, section_choice)
                         st.session_state.iq_output = raw_questions_response
                         
-                        # --- FIX 1: Clear previous state on button click ---
+                        # --- Clear previous state on button click ---
                         st.session_state.interview_qa = [] 
                         st.session_state.evaluation_report = "" 
                         
@@ -1352,7 +1368,7 @@ def candidate_dashboard():
                                 })
                                 
                         st.session_state.interview_qa = q_list
-                        # --- END FIX 1 ---
+                        # --- END FIX 2 ---
                         
                         st.success(f"Generated {len(q_list)} questions based on your **{section_choice}** section.")
                         
@@ -1559,6 +1575,7 @@ def candidate_dashboard():
                 st.session_state.candidate_match_results = []
 
             if st.button(f"Run Batch Match Against {len(st.session_state.candidate_jd_list)} JDs"):
+                
                 st.session_state.candidate_match_results = []
                 
                 resume_name = st.session_state.parsed.get('name', 'Uploaded Resume')
@@ -1610,33 +1627,71 @@ def candidate_dashboard():
                                 "education_percent": "Error",   
                                 "full_analysis": f"Error running analysis for {jd_name}: {e}\n{traceback.format_exc()}"
                             })
+                    
+                    # --- NEW: SORT RESULTS (FIX 3 - Part 1) ---
+                    def sort_key(item):
+                        # Convert score to int for proper sorting, defaulting to -1 for 'N/A' or 'Error'
+                        try:
+                            return int(item['overall_score'])
+                        except (ValueError, TypeError):
+                            return -1 
+
+                    st.session_state.candidate_match_results.sort(key=sort_key, reverse=True)
+                    # --- END SORT ---
+                    
                     st.success("Batch analysis complete!")
 
 
-            # 3. Display Results
+            # 3. Display Results (MODIFIED for ranking and apply button)
             if st.session_state.get('candidate_match_results'):
-                st.markdown("#### Match Results for Your Resume")
+                st.markdown("#### 3. Match Results (Ranked: Best Matches First) 🏆")
                 results_df = st.session_state.candidate_match_results
                 
-                display_data = []
-                for item in results_df:
-                    display_data.append({
-                        "Job Description": item["jd_name"].replace("--- Simulated JD for: ", ""),
-                        "Fit Score (out of 10)": item["overall_score"],
-                        "Skills (%)": item.get("skills_percent", "N/A"),
-                        "Experience (%)": item.get("experience_percent", "N/A"), 
-                        "Education (%)": item.get("education_percent", "N/A"),   
-                    })
+                # --- NEW: Apply Job Callback (FIX 3 - Part 2) ---
+                def apply_job_callback(job_name):
+                    st.toast(f"✅ Application for **{job_name}** simulated successfully!")
+                
+                
+                # Display Ranked List
+                for rank, item in enumerate(results_df, 1):
+                    
+                    jd_title = item["jd_name"].replace("--- Simulated JD for: ", "")
+                    score = item["overall_score"]
+                    
+                    # Skip displaying the result if the score is 'Error'
+                    if score in ['Error', 'N/A'] and rank > len(results_df) - 3: 
+                        with st.container(border=True):
+                             st.error(f"❌ **JD Match Rank {rank}:** {jd_title} - Analysis Error. See detailed report.")
+                        continue
 
-                st.dataframe(display_data, use_container_width=True)
 
-                st.markdown("##### Detailed Reports")
-                for item in results_df:
-                    header_text = f"Report for **{item['jd_name'].replace('--- Simulated JD for: ', '')}** (Score: **{item['overall_score']}/10** | S: **{item.get('skills_percent', 'N/A')}%** | E: **{item.get('experience_percent', 'N/A')}%** | Edu: **{item.get('education_percent', 'N/A')}%**)"
-                    with st.expander(header_text):
-                        st.markdown(item['full_analysis'])
+                    with st.container(border=True):
+                        
+                        col_rank, col_score, col_title, col_apply = st.columns([1, 1, 4, 1.5])
 
+                        with col_rank:
+                            st.markdown(f"**Rank {rank}**")
+                            
+                        with col_score:
+                            st.markdown(f"**Score: {score}/10**")
+                            
+                        with col_title:
+                            st.markdown(f"**{jd_title}**")
+                            
+                        with col_apply:
+                            # --- NEW: Apply Button ---
+                            if st.button("🚀 Apply for Job", key=f"apply_btn_{rank}", use_container_width=True, 
+                                         on_click=apply_job_callback, args=(jd_title,)):
+                                pass # Action handled by on_click callback
+                        
+                        # Section Match Analysis Display (optional, can be condensed)
+                        st.markdown(f"| **Skills:** {item.get('skills_percent', 'N/A')}% | **Experience:** {item.get('experience_percent', 'N/A')}% | **Education:** {item.get('education_percent', 'N/A')}% |")
 
+                        # Detailed Report Expander
+                        with st.expander(f"View Detailed AI Match Report for {jd_title}"):
+                            st.markdown(item['full_analysis'])
+
+# ... [Hiring Dashboard remains the same] ...
 def hiring_dashboard():
     st.header("🏢 Hiring Company Dashboard")
     st.write("Manage job postings and view candidate applications. (Placeholder for future features)")
