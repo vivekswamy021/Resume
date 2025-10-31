@@ -744,14 +744,11 @@ def vendor_approval_tab_content():
 def admin_dashboard():
     st.header("🧑‍💼 Admin Dashboard")
     
-    # --- NAVIGATION BLOCK ---
-    nav_col1, nav_col2 = st.columns([1, 1])
+    # --- NAVIGATION BLOCK (MODIFIED) ---
+    nav_col, _ = st.columns([1, 1]) # Use one column for Log Out
 
-    with nav_col1:
-        if st.button("⬅️ Go Back to Login", use_container_width=True):
-            go_to("login")
-            
-    with nav_col2:
+    with nav_col:
+        # Removed "⬅️ Go Back to Login"
         if st.button("🚪 Log Out", use_container_width=True):
             go_to("login") 
     # --- END NAVIGATION BLOCK ---
@@ -1136,14 +1133,11 @@ def candidate_dashboard():
     st.header("👩‍🎓 Candidate Dashboard")
     st.markdown("Welcome! Use the tabs below to upload your resume and access AI preparation tools.")
 
-    # --- MODIFIED NAVIGATION BLOCK ---
-    nav_col1, nav_col2 = st.columns([1, 1])
+    # --- MODIFIED NAVIGATION BLOCK (MODIFIED) ---
+    nav_col, _ = st.columns([1, 1]) # Use one column for Log Out
 
-    with nav_col1:
-        if st.button("⬅️ Go Back to Login", use_container_width=True):
-            go_to("login")
-            
-    with nav_col2:
+    with nav_col:
+        # Removed "⬅️ Go Back to Login"
         if st.button("🚪 Log Out", key="candidate_logout_btn", use_container_width=True):
             go_to("login") 
     # --- END MODIFIED NAVIGATION BLOCK ---
@@ -1654,15 +1648,14 @@ def hiring_dashboard():
     st.header("🏢 Hiring Company Dashboard")
     st.write("Manage job postings and view candidate applications. (Placeholder for future features)")
     
-    nav_col1, nav_col2 = st.columns([1, 1])
+    # --- MODIFIED NAVIGATION BLOCK (MODIFIED) ---
+    nav_col, _ = st.columns([1, 1]) # Use one column for Log Out
 
-    with nav_col1:
-        if st.button("⬅️ Go Back to Login", use_container_width=True):
-            go_to("login")
-            
-    with nav_col2:
+    with nav_col:
+        # Removed "⬅️ Go Back to Login"
         if st.button("🚪 Log Out", key="hiring_logout_btn", use_container_width=True):
             go_to("login") 
+    # --- END MODIFIED NAVIGATION BLOCK ---
 
 # -------------------------
 # Main App Initialization
@@ -1708,8 +1701,7 @@ def main():
         login_page()
     elif st.session_state.page == "signup":
         signup_page()
-    # REMOVED: elif st.session_state.page == "role_selection":
-    # REMOVED:     role_selection_page()
+    # REMOVED: role_selection page
     elif st.session_state.page == "admin_dashboard":
         admin_dashboard()
     elif st.session_state.page == "candidate_dashboard":
