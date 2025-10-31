@@ -52,14 +52,12 @@ def go_to(page_name):
     """Changes the current page in Streamlit's session state."""
     st.session_state.page = page_name
 
-# --- NEW FUNCTION FOR INTERVIEW STATE CLEARING (FIX 1) ---
 def clear_interview_state():
     """Clears all generated questions, answers, and the evaluation report."""
     st.session_state.interview_qa = []
     st.session_state.iq_output = ""
     st.session_state.evaluation_report = ""
     st.toast("Practice answers cleared.")
-# --- END NEW FUNCTION ---
 
 # -------------------------
 # CORE LOGIC: FILE HANDLING AND EXTRACTION
@@ -281,7 +279,7 @@ def evaluate_jd_fit(job_description, parsed_json):
     )
     return response.choices[0].message.content.strip()
 
-# --- NEW FUNCTION FOR INTERVIEW EVALUATION ---
+
 def evaluate_interview_answers(qa_list, parsed_json):
     """Evaluates the user's answers against the resume content and provides feedback."""
     
@@ -335,7 +333,6 @@ def evaluate_interview_answers(qa_list, parsed_json):
         temperature=0.3
     )
     return response.choices[0].message.content.strip()
-# --- END NEW FUNCTION ---
 
 
 # -------------------------
@@ -378,22 +375,17 @@ def dump_to_excel(parsed_json, filename):
 def parse_and_store_resume(uploaded_file, file_name_key='default'):
     """
     Handles file upload, parsing, and stores results.
-    CRITICAL FIX: Added explicit check for UploadedFile type.
     """
     
-    # Check if the input is actually a single Streamlit UploadedFile object
     if not isinstance(uploaded_file, UploadedFile):
-        # This should theoretically not happen if the calling loops are correct, 
-        # but serves as a final defense against the list error.
         st.error(f"Internal Error: Expected a single file, but received object type: {type(uploaded_file)}. Cannot parse.")
         return {"error": "Invalid file input type passed to parser.", "full_text": ""}
 
     temp_dir = tempfile.mkdtemp()
     
-    # This is the line that caused the error previously if uploaded_file was a list.
     temp_path = os.path.join(temp_dir, uploaded_file.name) 
     with open(temp_path, "wb") as f:
-        f.write(uploaded_file.getbuffer()) # This is the second line that would crash.
+        f.write(uploaded_file.getbuffer()) 
 
     file_type = get_file_type(temp_path)
     text = extract_content(file_type, temp_path)
@@ -416,7 +408,6 @@ def parse_and_store_resume(uploaded_file, file_name_key='default'):
             excel_filename = os.path.join(tempfile.gettempdir(), f"{name}_parsed_data.xlsx")
             excel_data = dump_to_excel(parsed, excel_filename)
         except Exception as e:
-            # We skip the Excel warning here as it's not critical
             pass
     
     return {
@@ -475,21 +466,38 @@ Q3: Question text...
 
 
 # -------------------------
-# UI PAGES: Authentication (Login, Signup, Role Selection - Kept for context)
+# UI PAGES: Authentication (Login, Signup)
 # -------------------------
 
 def login_page():
     st.title("🌐 PragyanAI Job Portal")
     st.header("Login")
 
+    # --- Role Selection ADDED HERE (NEW) ---
+    selected_role = st.selectbox(
+        "Select Your Role",
+        ["Select Role", "Admin Dashboard", "Candidate Dashboard", "Hiring Company Dashboard"],
+        key="login_role_select"
+    )
+    
+    st.markdown("---")
+
     email = st.text_input("Email")
     password = st.text_input("Password", type="password")
 
     if st.button("Login", use_container_width=True):
         if email and password:
-            # Simulate successful login and go to role selection
-            st.success("Login successful!")
-            go_to("role_selection")
+            if selected_role == "Select Role":
+                st.error("Please select your role before logging in.")
+            elif selected_role == "Admin Dashboard":
+                st.success("Login successful! Redirecting to Admin Dashboard.")
+                go_to("admin_dashboard")
+            elif selected_role == "Candidate Dashboard":
+                st.success("Login successful! Redirecting to Candidate Dashboard.")
+                go_to("candidate_dashboard")
+            elif selected_role == "Hiring Company Dashboard":
+                st.success("Login successful! Redirecting to Hiring Company Dashboard.")
+                go_to("hiring_dashboard")
         else:
             st.error("Please enter both email and password")
 
@@ -514,29 +522,7 @@ def signup_page():
     if st.button("Already have an account? Login here"):
         go_to("login")
 
-def role_selection_page():
-    st.header("Select Your Role")
-    role = st.selectbox(
-        "Choose a Dashboard",
-        ["Select Role", "Admin Dashboard", "Candidate Dashboard", "Hiring Company Dashboard"]
-    )
-
-    col1, col2 = st.columns([2, 1])
-
-    with col1:
-        if st.button("Continue", use_container_width=True):
-            if role == "Admin Dashboard":
-                go_to("admin_dashboard")
-            elif role == "Candidate Dashboard":
-                go_to("candidate_dashboard")
-            elif role == "Hiring Company Dashboard":
-                go_to("hiring_dashboard")
-            else:
-                st.warning("Please select a role first")
-
-    with col2:
-        if st.button("⬅️ Go Back to Login"):
-            go_to("login")
+# REMOVED: role_selection_page() is no longer needed
 
 # -------------------------
 # UI PAGES: Admin and Hiring Dashboards (Kept for context)
@@ -762,8 +748,8 @@ def admin_dashboard():
     nav_col1, nav_col2 = st.columns([1, 1])
 
     with nav_col1:
-        if st.button("⬅️ Go Back to Role Selection", use_container_width=True):
-            go_to("role_selection")
+        if st.button("⬅️ Go Back to Login", use_container_width=True):
+            go_to("login")
             
     with nav_col2:
         if st.button("🚪 Log Out", use_container_width=True):
@@ -1154,8 +1140,8 @@ def candidate_dashboard():
     nav_col1, nav_col2 = st.columns([1, 1])
 
     with nav_col1:
-        if st.button("⬅️ Go Back to Role Selection", use_container_width=True):
-            go_to("role_selection")
+        if st.button("⬅️ Go Back to Login", use_container_width=True):
+            go_to("login")
             
     with nav_col2:
         if st.button("🚪 Log Out", key="candidate_logout_btn", use_container_width=True):
@@ -1671,8 +1657,8 @@ def hiring_dashboard():
     nav_col1, nav_col2 = st.columns([1, 1])
 
     with nav_col1:
-        if st.button("⬅️ Go Back to Role Selection", use_container_width=True):
-            go_to("role_selection")
+        if st.button("⬅️ Go Back to Login", use_container_width=True):
+            go_to("login")
             
     with nav_col2:
         if st.button("🚪 Log Out", key="hiring_logout_btn", use_container_width=True):
@@ -1722,8 +1708,8 @@ def main():
         login_page()
     elif st.session_state.page == "signup":
         signup_page()
-    elif st.session_state.page == "role_selection":
-        role_selection_page()
+    # REMOVED: elif st.session_state.page == "role_selection":
+    # REMOVED:     role_selection_page()
     elif st.session_state.page == "admin_dashboard":
         admin_dashboard()
     elif st.session_state.page == "candidate_dashboard":
