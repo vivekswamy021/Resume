@@ -423,8 +423,9 @@ def dump_to_excel(parsed_json, filename):
     section_order = ['name', 'email', 'phone', 'github', 'linkedin', 'experience', 'education', 'skills', 'projects', 'certifications', 'strength', 'personal_details']
     
     for section_key in section_order:
-        if section_key in parsed_json and parsed_json[section_key]:
-            content = parsed_json[section_key]
+        # Use .get() for safe access here too
+        if section_key in parsed_json and parsed_json.get(section_key):
+            content = parsed_json.get(section_key)
             
             if section_key in ['name', 'email', 'phone', 'github', 'linkedin']:
                 ws.append([section_key.replace('_', ' ').title(), str(content)])
@@ -478,6 +479,7 @@ def parse_and_store_resume(uploaded_file, file_name_key='default'):
     excel_data = None
     if file_name_key == 'single_resume_candidate':
         try:
+            # Use .get() here for safe access to 'name'
             name = parsed.get('name', 'candidate').replace(' ', '_').strip()
             name = "".join(c for c in name if c.isalnum() or c in ('_', '-')).rstrip()
             if not name: name = "candidate"
@@ -490,6 +492,7 @@ def parse_and_store_resume(uploaded_file, file_name_key='default'):
         "parsed": parsed,
         "full_text": text,
         "excel_data": excel_data,
+        # Use .get() for safe access to 'name'
         "name": parsed.get('name', uploaded_file.name.split('.')[0])
     }
 
@@ -1201,10 +1204,18 @@ def generate_cv_html(parsed_data):
     html_content += f"<h1>{parsed_data.get('name', 'Candidate Name')}</h1>"
     
     contact_parts = []
-    if parsed_data.get('email'): contact_parts.append(f"<span>📧 {parsed_data['email']}</span>")
-    if parsed_data.get('phone'): contact_parts.append(f"<span>📱 {parsed_data['phone']}</span>")
-    if parsed_data.get('linkedin'): contact_parts.append(f"<span>🔗 <a href='{parsed_data['linkedin']}'>{parsed_data.get('linkedin', 'LinkedIn').split('/')[-1] if parsed_data.get('linkedin') else 'LinkedIn'}</a></span>")
-    if parsed_data.get('github'): contact_parts.append(f"<span>💻 <a href='{parsed_data['github']}'>{parsed_data.get('github', 'GitHub').split('/')[-1] if parsed_data.get('github') else 'GitHub'}</a></span>")
+    if parsed_data.get('email'): contact_parts.append(f"<span>📧 {parsed_data.get('email')}</span>") # FIX: Use .get() here too (though likely safe)
+    if parsed_data.get('phone'): contact_parts.append(f"<span>📱 {parsed_data.get('phone')}</span>")
+    if parsed_data.get('linkedin'): 
+        # FIX: Use .get() for the URL itself
+        linkedin_url = parsed_data.get('linkedin')
+        linkedin_display = linkedin_url.split('/')[-1] if linkedin_url else 'LinkedIn'
+        contact_parts.append(f"<span>🔗 <a href='{linkedin_url}'>{linkedin_display}</a></span>")
+    if parsed_data.get('github'): 
+        # FIX: Use .get() for the URL itself
+        github_url = parsed_data.get('github')
+        github_display = github_url.split('/')[-1] if github_url else 'GitHub'
+        contact_parts.append(f"<span>💻 <a href='{github_url}'>{github_display}</a></span>")
     
     html_content += f'<div class="contact-info">{" | ".join(contact_parts)}</div>'
     html_content += '</div>'
@@ -1247,20 +1258,34 @@ def cv_management_tab_content():
     st.markdown("### 1. Form Based CV Builder")
     st.info("Fill out the details below to generate a parsed CV that can be used immediately for matching and interview prep, or start by parsing a file in the 'Resume Parsing' tab.")
 
-    # Initialize the parsed data if not already existing
+    # CRITICAL FIX: Robustly initialize the form data from parsed data or defaults
     default_parsed = {
         "name": "", "email": "", "phone": "", "linkedin": "", "github": "",
         "skills": [], "experience": [], "education": [], "certifications": [], 
         "projects": [], "strength": [], "personal_details": ""
     }
     
-    # Use a specific session state key for form data, initializing from parsed if available
     if "cv_form_data" not in st.session_state:
         # Load existing parsed data or default if the tab is opened for the first time
+        # Use .get() defensively for ALL fields loaded from parsed data
         if st.session_state.get('parsed', {}).get('name'):
-            st.session_state.cv_form_data = st.session_state.parsed.copy()
+            st.session_state.cv_form_data = {
+                "name": st.session_state.parsed.get('name', ""),
+                "email": st.session_state.parsed.get('email', ""),
+                "phone": st.session_state.parsed.get('phone', ""),
+                "linkedin": st.session_state.parsed.get('linkedin', ""),
+                "github": st.session_state.parsed.get('github', ""),
+                "skills": st.session_state.parsed.get('skills', []),
+                "experience": st.session_state.parsed.get('experience', []),
+                "education": st.session_state.parsed.get('education', []),
+                "certifications": st.session_state.parsed.get('certifications', []), 
+                "projects": st.session_state.parsed.get('projects', []), 
+                "strength": st.session_state.parsed.get('strength', []), 
+                "personal_details": st.session_state.parsed.get('personal_details', "")
+            }
         else:
             st.session_state.cv_form_data = default_parsed
+            
     
     # --- CV Builder Form ---
     with st.form("cv_builder_form"):
@@ -1292,6 +1317,7 @@ def cv_management_tab_content():
         with col4:
             st.session_state.cv_form_data['linkedin'] = st.text_input(
                 "LinkedIn Profile URL", 
+                # Use .get() defensively on the form data itself, which is now safely initialized
                 value=st.session_state.cv_form_data.get('linkedin', ''), 
                 key="cv_linkedin"
             )
@@ -1431,13 +1457,13 @@ def cv_management_tab_content():
             
             # --- Personal Info (Header) ---
             if parsed_data.get('name'):
-                md += f"# **{parsed_data['name']}**\n\n"
+                md += f"# **{parsed_data.get('name')}**\n\n"
             
             contact_info = []
-            if parsed_data.get('email'): contact_info.append(parsed_data['email'])
-            if parsed_data.get('phone'): contact_info.append(parsed_data['phone'])
-            if parsed_data.get('linkedin'): contact_info.append(f"[LinkedIn]({parsed_data['linkedin']})")
-            if parsed_data.get('github'): contact_info.append(f"[GitHub]({parsed_data['github']})")
+            if parsed_data.get('email'): contact_info.append(parsed_data.get('email'))
+            if parsed_data.get('phone'): contact_info.append(parsed_data.get('phone'))
+            if parsed_data.get('linkedin'): contact_info.append(f"[LinkedIn]({parsed_data.get('linkedin')})")
+            if parsed_data.get('github'): contact_info.append(f"[GitHub]({parsed_data.get('github')})")
             
             if contact_info:
                 md += f"| {' | '.join(contact_info)} |\n"
@@ -1553,7 +1579,7 @@ def candidate_dashboard():
         
         # Check if a resume is currently loaded into the main parsing variables
         if st.session_state.parsed.get("name"):
-            st.success(f"Currently loaded: **{st.session_state.parsed['name']}**")
+            st.success(f"Currently loaded: **{st.session_state.parsed.get('name')}**")
         elif st.session_state.full_text:
             st.warning("Resume content is loaded, but parsing may have errors.")
         else:
@@ -1670,6 +1696,7 @@ def candidate_dashboard():
                                 "parsed": parsed,
                                 "full_text": text,
                                 "excel_data": None, 
+                                # Use .get() here for safety
                                 "name": parsed.get('name', 'Pasted_CV')
                             }
                     # --- Unified Parsing Logic End ---
@@ -1686,6 +1713,7 @@ def candidate_dashboard():
                         st.success(f"✅ Successfully loaded and parsed **{result['name']}**.")
                         st.info("View, edit, and download the parsed data in the **CV Management** tab.") 
                         # Important: Update the CV form data with the newly parsed data
+                        # This should be safe now due to the fix in cv_management_tab_content
                         st.session_state.cv_form_data = result['parsed'].copy()
                     elif result:
                         st.error(f"Parsing failed: {result['error']}")
@@ -2117,12 +2145,10 @@ def main():
     if 'evaluation_report' not in st.session_state: st.session_state.evaluation_report = ""
         
     # CV Builder Form State (NEW)
+    # NOTE: The content for st.session_state.cv_form_data is now handled safely within cv_management_tab_content()
+    # But we initialize it here as an empty object for safety if that function isn't called first.
     if "cv_form_data" not in st.session_state: 
-        st.session_state.cv_form_data = {
-            "name": "", "email": "", "phone": "", "linkedin": "", "github": "",
-            "skills": [], "experience": [], "education": [], "certifications": [], 
-            "projects": [], "strength": [], "personal_details": ""
-        }
+        st.session_state.cv_form_data = {} 
 
 
     # --- Page Routing ---
