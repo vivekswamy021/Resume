@@ -189,10 +189,6 @@ def parse_with_llm(text, return_type='json'):
                     for sub_k, sub_v in v.items():
                         if sub_v:
                             md += f"  - {sub_k.replace('_', ' ').title()}: {sub_v}\n"
-                    # Handle a complex structure that might be an array of dicts (e.g., Experience)
-                    # This is better handled in the Markdown generation function, but keeping a fallback
-                    # if the LLM output is non-standard.
-                    # Fallback removed for conciseness as LLM is instructed to use lists/dicts.
                 else:
                     md += f"  {v}\n"
                 md += "\n"
@@ -1230,7 +1226,7 @@ def generate_cv_html(parsed_data):
 def cv_management_tab_content():
     st.header("📝 Prepare Your CV")
     st.markdown("### 1. Form Based CV Builder")
-    st.info("Fill out the details below to generate a parsed CV that can be used immediately for matching and interview prep, or start by parsing a file in the **Resume Parsing** tab.")
+    st.info("Fill out the details below to generate a parsed CV that can be used immediately for matching and interview prep, or start by parsing a file in the 'Resume Parsing' tab.")
 
     # Initialize the parsed data if not already existing
     default_parsed = {
@@ -1536,55 +1532,122 @@ def candidate_dashboard():
         else:
             st.info("Please upload a file or use the CV builder in 'CV Management' to begin.")
 
-    # Main Content Tabs (Updated Tab Order)
-    tab1, tab_cv_mgmt, tab2, tab3, tab4, tab5 = st.tabs([
-        "📄 Resume Parsing",      # Tab 1 (Now First)
-        "✍️ CV Management",       # Tab_cv_mgmt (Now Second)
-        "💬 Resume Chatbot (Q&A)", # Tab 2
-        "❓ Interview Prep",       # Tab 3
-        "📚 JD Management",        # Tab 4
-        "🎯 Batch JD Match"        # Tab 5
+    # Main Content Tabs (Added CV Management tab)
+    tab_cv_mgmt, tab1, tab2, tab3, tab4, tab5 = st.tabs([
+        "✍️ CV Management", 
+        "📄 Resume Parsing", 
+        "💬 Resume Chatbot (Q&A)", 
+        "❓ Interview Prep", 
+        "📚 JD Management", 
+        "🎯 Batch JD Match" 
     ])
     
     is_resume_parsed = bool(st.session_state.get('parsed', {}).get('name')) or bool(st.session_state.get('full_text'))
     
-    # --- TAB 1: Resume Parsing (Now First) ---
+    # --- TAB 0: CV Management ---
+    with tab_cv_mgmt:
+        cv_management_tab_content()
+
+    # --- TAB 1: Resume Parsing (MODIFIED TO ADD PASTE OPTION) ---
     with tab1:
         st.header("Resume Upload and Parsing")
         
-        # 1. Upload Section
-        st.markdown("### 1. Upload Resume") 
-        
-        uploaded_file = st.file_uploader( 
-            "Choose PDF or DOCX file", 
-            type=["pdf", "docx"], 
-            accept_multiple_files=False, 
-            key='candidate_file_upload_main'
+        # NEW: Selection for Input Method
+        input_method = st.radio(
+            "Choose Input Method",
+            ["Upload File", "Paste Text"],
+            key="resume_input_method_candidate",
+            horizontal=True
         )
+        
+        st.markdown("---")
 
-        if uploaded_file is not None:
-            st.session_state.candidate_uploaded_resumes = [uploaded_file] 
-            st.toast("Resume uploaded successfully.")
-        elif st.session_state.candidate_uploaded_resumes and uploaded_file is None:
-             st.session_state.candidate_uploaded_resumes = []
-             st.session_state.parsed = {}
-             st.session_state.full_text = ""
-             st.toast("Upload cleared.")
+        # 1. Upload Section (Conditional based on radio button)
+        if input_method == "Upload File":
+            st.markdown("### 1. Upload Resume") 
+            
+            uploaded_file = st.file_uploader( 
+                "Choose PDF or DOCX file", 
+                type=["pdf", "docx"], 
+                accept_multiple_files=False, 
+                key='candidate_file_upload_main'
+            )
+
+            if uploaded_file is not None:
+                # We use a temporary session state variable to hold the file path/object
+                # which is checked in the parsing step
+                st.session_state.candidate_uploaded_resumes = [uploaded_file] 
+                st.session_state.candidate_pasted_text = "" # Clear paste text
+                st.toast("Resume uploaded successfully.")
+            elif st.session_state.candidate_uploaded_resumes and uploaded_file is None:
+                 st.session_state.candidate_uploaded_resumes = []
+                 st.session_state.parsed = {}
+                 st.session_state.full_text = ""
+                 st.toast("Upload cleared.")
+
+        # 1. Paste Section (Conditional based on radio button)
+        elif input_method == "Paste Text":
+            st.markdown("### 1. Paste Your CV")
+            
+            pasted_text = st.text_area(
+                "Paste your resume text here (PDF/DOCX content)",
+                height=300,
+                key='candidate_paste_text_area'
+            )
+            
+            if pasted_text:
+                st.session_state.candidate_pasted_text = pasted_text
+                st.session_state.candidate_uploaded_resumes = [] # Clear uploaded file
 
         st.markdown("---")
 
-        # 2. Parse Uploaded Resume
-        st.markdown("### 2. Parse Uploaded Resume")
+        # 2. Parse Uploaded/Pasted Resume (Unified Logic)
+        st.markdown("### 2. Parse Data")
         
-        file_to_parse = st.session_state.candidate_uploaded_resumes[0] if st.session_state.candidate_uploaded_resumes else None
+        is_file_ready = bool(st.session_state.candidate_uploaded_resumes)
+        is_text_ready = bool(st.session_state.candidate_pasted_text and st.session_state.candidate_pasted_text.strip())
         
-        if file_to_parse:
+        if is_file_ready:
+            file_to_parse = st.session_state.candidate_uploaded_resumes[0]
+            parse_button_label = f"Parse and Load: **{file_to_parse.name}**"
+        elif is_text_ready:
+            parse_button_label = "Parse and Load Pasted Text"
+        else:
+            parse_button_label = "Parse and Load Data"
+
+
+        if is_file_ready or is_text_ready:
             
-            if st.button(f"Parse and Load: **{file_to_parse.name}**", use_container_width=True):
-                with st.spinner(f"Parsing {file_to_parse.name}..."):
-                    result = parse_and_store_resume(file_to_parse, file_name_key='single_resume_candidate')
+            if st.button(parse_button_label, use_container_width=True):
+                
+                with st.spinner(f"Parsing data... This may take a moment."):
                     
-                    if "error" not in result:
+                    # --- Unified Parsing Logic Start ---
+                    result = None
+                    if is_file_ready:
+                        # Logic for uploaded file
+                        file_to_parse = st.session_state.candidate_uploaded_resumes[0]
+                        result = parse_and_store_resume(file_to_parse, file_name_key='single_resume_candidate')
+                        
+                    elif is_text_ready:
+                        # Logic for pasted text (Simulate the result structure)
+                        text = st.session_state.candidate_pasted_text
+                        
+                        parsed = parse_with_llm(text, return_type='json')
+                        
+                        if "error" in parsed:
+                            result = {"error": parsed.get('error', 'Unknown parsing error'), "full_text": text}
+                        else:
+                            # For pasted text, generate a generic name and excel data is skipped for simplicity
+                            result = {
+                                "parsed": parsed,
+                                "full_text": text,
+                                "excel_data": None, 
+                                "name": parsed.get('name', 'Pasted_CV')
+                            }
+                    # --- Unified Parsing Logic End ---
+
+                    if result and "error" not in result:
                         st.session_state.parsed = result['parsed']
                         st.session_state.full_text = result['full_text']
                         st.session_state.excel_data = result['excel_data'] 
@@ -1594,20 +1657,19 @@ def candidate_dashboard():
                         clear_interview_state()
                         
                         st.success(f"✅ Successfully loaded and parsed **{result['name']}**.")
-                        # Confirmation text removed in previous step.
-                    else:
-                        st.error(f"Parsing failed for {file_to_parse.name}: {result['error']}")
-                        st.session_state.parsed = {"error": result['error'], "name": file_to_parse.name}
+                        st.info("View, edit, and download the parsed data in the **CV Management** tab.") 
+                        # Important: Update the CV form data with the newly parsed data
+                        st.session_state.cv_form_data = result['parsed'].copy()
+                    elif result:
+                        st.error(f"Parsing failed: {result['error']}")
+                        st.session_state.parsed = {"error": result['error'], "name": "Error"}
                         st.session_state.full_text = result['full_text'] or ""
+                    
         else:
-            st.info("No resume file is currently uploaded. Please upload a file in section 1.")
+            st.info("Please either **Upload a file** or **Paste your CV text** in section 1 to begin.")
 
-            
         st.markdown("---")
-            
-    # --- TAB 0: CV Management (Now Second) ---
-    with tab_cv_mgmt:
-        cv_management_tab_content()
+
 
     # --- TAB 2: Resume Chatbot (Q&A) ---
     with tab2:
@@ -2021,6 +2083,7 @@ def main():
     
     # Resume Parsing Upload State
     if 'candidate_uploaded_resumes' not in st.session_state: st.session_state.candidate_uploaded_resumes = []
+    if 'candidate_pasted_text' not in st.session_state: st.session_state.candidate_pasted_text = "" # NEW STATE for pasted text
     
     # Interview Prep Q&A State (NEW)
     if 'interview_qa' not in st.session_state: st.session_state.interview_qa = [] 
