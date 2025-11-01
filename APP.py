@@ -522,8 +522,6 @@ def signup_page():
     if st.button("Already have an account? Login here"):
         go_to("login")
 
-# REMOVED: role_selection_page() is no longer needed
-
 # -------------------------
 # UI PAGES: Admin and Hiring Dashboards (Kept for context)
 # -------------------------
@@ -745,10 +743,9 @@ def admin_dashboard():
     st.header("🧑‍💼 Admin Dashboard")
     
     # --- NAVIGATION BLOCK (MODIFIED) ---
-    nav_col, _ = st.columns([1, 1]) # Use one column for Log Out
+    nav_col, _ = st.columns([1, 1]) 
 
     with nav_col:
-        # Removed "⬅️ Go Back to Login"
         if st.button("🚪 Log Out", use_container_width=True):
             go_to("login") 
     # --- END NAVIGATION BLOCK ---
@@ -1128,8 +1125,72 @@ def admin_dashboard():
         else:
             st.info("No resumes loaded to calculate status breakdown.")
 
+# --- NEW HELPER FUNCTION FOR HTML/PDF Generation ---
+def generate_cv_html(parsed_data):
+    """Generates a simple, print-friendly HTML string from parsed data for PDF conversion."""
+    
+    # Simple CSS for a clean, print-friendly CV look
+    css = """
+    <style>
+        body { font-family: 'Arial', sans-serif; line-height: 1.5; margin: 40px; }
+        .header { text-align: center; border-bottom: 2px solid #333; padding-bottom: 10px; margin-bottom: 20px; }
+        .header h1 { margin: 0; font-size: 2em; }
+        .contact-info { display: flex; justify-content: center; font-size: 0.9em; color: #555; }
+        .contact-info span { margin: 0 10px; }
+        .section { margin-bottom: 25px; }
+        .section h2 { border-bottom: 1px solid #999; padding-bottom: 5px; margin-bottom: 10px; font-size: 1.2em; text-transform: uppercase; }
+        .item-list ul { list-style-type: disc; margin-left: 20px; padding-left: 0; }
+        .item-list ul li { margin-bottom: 5px; }
+        .item-list p { margin: 5px 0 10px 0; }
+    </style>
+    """
+    
+    # --- HTML Structure ---
+    html_content = f"<html><head>{css}<title>{parsed_data.get('name', 'CV')}</title></head><body>"
+    
+    # 1. Header and Contact Info
+    html_content += '<div class="header">'
+    html_content += f"<h1>{parsed_data.get('name', 'Candidate Name')}</h1>"
+    
+    contact_parts = []
+    if parsed_data.get('email'): contact_parts.append(f"<span>📧 {parsed_data['email']}</span>")
+    if parsed_data.get('phone'): contact_parts.append(f"<span>📱 {parsed_data['phone']}</span>")
+    if parsed_data.get('linkedin'): contact_parts.append(f"<span>🔗 <a href='{parsed_data['linkedin']}'>LinkedIn</a></span>")
+    if parsed_data.get('github'): contact_parts.append(f"<span>💻 <a href='{parsed_data['github']}'>GitHub</a></span>")
+    
+    html_content += f'<div class="contact-info">{" | ".join(contact_parts)}</div>'
+    html_content += '</div>'
+    
+    # 2. Sections
+    section_order = ['personal_details', 'experience', 'projects', 'education', 'certifications', 'skills', 'strength']
+    
+    for k in section_order:
+        v = parsed_data.get(k)
+        
+        if v and (isinstance(v, str) and v.strip() or isinstance(v, list) and v):
             
-# --- NEW HELPER FUNCTION FOR CV MANAGEMENT (MODIFIED) ---
+            # Skip contact details already handled
+            if k in ['name', 'email', 'phone', 'linkedin', 'github']: continue 
+
+            html_content += f'<div class="section"><h2>{k.replace("_", " ").title()}</h2>'
+            html_content += '<div class="item-list">'
+            
+            if k == 'personal_details' and isinstance(v, str):
+                html_content += f"<p>{v}</p>"
+            elif isinstance(v, list):
+                html_content += '<ul>'
+                for item in v:
+                    if item: 
+                        html_content += f"<li>{item}</li>"
+                html_content += '</ul>'
+            else:
+                html_content += f"<p>{v}</p>"
+                
+            html_content += '</div></div>'
+
+    html_content += '</body></html>'
+    return html_content
+
 
 def cv_management_tab_content():
     st.header("📝 Prepare Your CV")
@@ -1191,7 +1252,7 @@ def cv_management_tab_content():
                 key="cv_github"
             )
         
-        # Row 3: Summary/Personal Details (NEW)
+        # Row 3: Summary/Personal Details 
         st.markdown("---")
         st.subheader("Summary / Personal Details")
         st.session_state.cv_form_data['personal_details'] = st.text_area(
@@ -1234,7 +1295,7 @@ def cv_management_tab_content():
         )
         st.session_state.cv_form_data['education'] = [d.strip() for d in new_education_text.split('\n') if d.strip()]
         
-        # Certifications (NEW)
+        # Certifications
         certifications_text = "\n".join(st.session_state.cv_form_data.get('certifications', []))
         new_certifications_text = st.text_area(
             "Certifications (Name, Issuing Body, Date)", 
@@ -1244,7 +1305,7 @@ def cv_management_tab_content():
         )
         st.session_state.cv_form_data['certifications'] = [c.strip() for c in new_certifications_text.split('\n') if c.strip()]
         
-        # Projects (NEW)
+        # Projects
         projects_text = "\n".join(st.session_state.cv_form_data.get('projects', []))
         new_projects_text = st.text_area(
             "Projects (Name, Description, Technologies)", 
@@ -1263,6 +1324,7 @@ def cv_management_tab_content():
             key="cv_strength"
         )
         st.session_state.cv_form_data['strength'] = [s.strip() for s in new_strength_text.split('\n') if s.strip()]
+
 
         submit_form_button = st.form_submit_button("Generate and Load CV Data", use_container_width=True)
 
@@ -1294,12 +1356,19 @@ def cv_management_tab_content():
 
         st.success(f"✅ CV data for **{st.session_state.parsed['name']}** successfully generated and loaded! You can now use the Chatbot, Match, and Interview Prep tabs.")
         
-        # Optional: Display generated data
-        st.markdown("---")
-        st.subheader("2. Loaded CV Data Preview")
+    st.markdown("---")
+    st.subheader("2. Loaded CV Data Preview")
+    
+    # --- TABBED VIEW SECTION ---
+    if st.session_state.get('parsed', {}).get('name'):
         
-        # --- MODIFIED PREVIEW LOGIC: Use parsing logic to generate formatted Markdown ---
+        # Filter for non-empty/non-list fields before sending to formatter
+        filled_data_for_preview = {
+            k: v for k, v in st.session_state.parsed.items() 
+            if v and (isinstance(v, str) and v.strip() or isinstance(v, list) and v)
+        }
         
+        # Helper function for Markdown formatting
         def format_parsed_json_to_markdown(parsed_data):
             """Formats the parsed JSON data into a clean, CV-like Markdown structure."""
             md = ""
@@ -1345,23 +1414,46 @@ def cv_management_tab_content():
                         md += f"{v}\n\n"
             return md
 
-        # Filter for non-empty/non-list fields before sending to formatter
-        filled_data_for_preview = {k: v for k, v in st.session_state.parsed.items() if v and (isinstance(v, str) and v.strip() or isinstance(v, list) and v)}
-        cv_markdown_preview = format_parsed_json_to_markdown(filled_data_for_preview)
-        
-        st.markdown(cv_markdown_preview)
 
-        # --- END MODIFIED PREVIEW LOGIC ---
+        tab_markdown, tab_json, tab_pdf = st.tabs(["📝 Markdown View", "💾 JSON View", "⬇️ PDF View (Download)"])
 
-        # Download Button
-        st.markdown("---")
-        st.download_button(
-            label="⬇️ Download CV Data as Text File",
-            data=st.session_state.full_text,
-            file_name=f"{st.session_state.parsed.get('name', 'Generated_CV').replace(' ', '_')}_CV_Data.txt",
-            mime="text/plain",
-            key="download_cv_txt"
-        )
+        # --- Markdown View ---
+        with tab_markdown:
+            cv_markdown_preview = format_parsed_json_to_markdown(filled_data_for_preview)
+            st.markdown(cv_markdown_preview)
+
+        # --- JSON View ---
+        with tab_json:
+            st.json(st.session_state.parsed)
+            st.info("This is the raw, structured data used by the AI tools.")
+
+        # --- PDF View (Download) ---
+        with tab_pdf:
+            st.markdown("### Download CV as HTML (Print-to-PDF)")
+            st.info("Click the button below to download an HTML file. Open the file in your browser and use the browser's **'Print'** function, selecting **'Save as PDF'** to create your final CV document.")
+            
+            html_output = generate_cv_html(filled_data_for_preview)
+
+            st.download_button(
+                label="⬇️ Download CV as HTML File",
+                data=html_output,
+                file_name=f"{st.session_state.parsed.get('name', 'Generated_CV').replace(' ', '_')}_CV_Document.html",
+                mime="text/html",
+                key="download_cv_html"
+            )
+            
+            st.markdown("---")
+            st.markdown("### Raw Text Data Download")
+            st.download_button(
+                label="⬇️ Download All CV Data as Raw Text (.txt)",
+                data=st.session_state.full_text,
+                file_name=f"{st.session_state.parsed.get('name', 'Generated_CV').replace(' ', '_')}_Raw_Data.txt",
+                mime="text/plain",
+                key="download_cv_txt_final"
+            )
+            
+    else:
+        st.info("Please fill out the form above and click 'Generate and Load CV Data' to see the preview.")
 
 
 def candidate_dashboard():
@@ -1764,8 +1856,6 @@ def candidate_dashboard():
             if "candidate_match_results" not in st.session_state:
                 st.session_state.candidate_match_results = []
 
-            # --- FIX 2: START NEW SELECTION LOGIC ---
-            
             # 1. Get all available JD names
             all_jd_names = [item['name'] for item in st.session_state.candidate_jd_list]
             
@@ -1783,9 +1873,6 @@ def candidate_dashboard():
                 if jd_item['name'] in selected_jd_names
             ]
             
-            # --- FIX 2: END NEW SELECTION LOGIC ---
-
-
             if st.button(f"Run Match Analysis on {len(jds_to_match)} Selected JD(s)"):
                 st.session_state.candidate_match_results = []
                 
@@ -1798,7 +1885,7 @@ def candidate_dashboard():
 
                     with st.spinner(f"Matching {resume_name}'s resume against {len(jds_to_match)} selected JD(s)..."):
                         
-                        # --- MODIFIED: Loop over jds_to_match instead of candidate_jd_list ---
+                        # Loop over jds_to_match
                         for jd_item in jds_to_match:
                             
                             jd_name = jd_item['name']
@@ -1876,10 +1963,9 @@ def hiring_dashboard():
     st.write("Manage job postings and view candidate applications. (Placeholder for future features)")
     
     # --- MODIFIED NAVIGATION BLOCK (MODIFIED) ---
-    nav_col, _ = st.columns([1, 1]) # Use one column for Log Out
+    nav_col, _ = st.columns([1, 1]) 
 
     with nav_col:
-        # Removed "⬅️ Go Back to Login"
         if st.button("🚪 Log Out", key="hiring_logout_btn", use_container_width=True):
             go_to("login") 
     # --- END MODIFIED NAVIGATION BLOCK ---
@@ -1936,7 +2022,6 @@ def main():
         login_page()
     elif st.session_state.page == "signup":
         signup_page()
-    # REMOVED: role_selection page
     elif st.session_state.page == "admin_dashboard":
         admin_dashboard()
     elif st.session_state.page == "candidate_dashboard":
