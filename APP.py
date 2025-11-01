@@ -6,14 +6,11 @@ import openpyxl
 import json
 import tempfile
 from groq import Groq
-from gtts import gTTS # Imported but not used in this version
+from gtts import gTTS 
 import traceback
 import re
 from dotenv import load_dotenv 
 from datetime import date 
-from typing import List, Dict, Union, Any
-
-# Ensure that UploadedFile class is accessible for type checking
 from streamlit.runtime.uploaded_file_manager import UploadedFile
 
 # -------------------------
@@ -33,15 +30,11 @@ load_dotenv()
 GROQ_API_KEY = os.getenv('GROQ_API_KEY')
 
 if not GROQ_API_KEY:
-    # Use st.warning instead of st.error/st.stop to allow the script to run 
-    # if the user is running it without a key, but alert them to the dependency.
     st.warning(
         "🚨 WARNING: GROQ_API_KEY environment variable not set. "
         "AI functionality (Parsing, Matching, Q&A) will not work. "
         "Please ensure a '.env' file exists with your key."
     )
-    # Initialize a mock client to prevent immediate crash if key is missing, 
-    # although all LLM functions will fail.
     class MockGroqClient:
         def chat(self):
             class Completions:
@@ -51,7 +44,6 @@ if not GROQ_API_KEY:
     
     client = MockGroqClient()
 else:
-    # Initialize Groq Client
     client = Groq(api_key=GROQ_API_KEY)
 
 
@@ -185,12 +177,7 @@ def parse_with_llm(text, return_type='json'):
                 if isinstance(v, list):
                     for item in v:
                         if item: 
-                            # FIX: Handle potential dicts returned by LLM in a list
-                            if isinstance(item, dict):
-                                item_str = " | ".join(f"{key}: {val}" for key, val in item.items())
-                                md += f"- {item_str}\n"
-                            else:
-                                md += f"- {item}\n"
+                            md += f"- {item}\n"
                 elif isinstance(v, dict):
                     for sub_k, sub_v in v.items():
                         if sub_v:
@@ -403,16 +390,6 @@ Q3: Question text...
 # -------------------------
 # Utility Functions
 # -------------------------
-def convert_to_flat_string(item: Union[str, Dict[str, Any]]) -> str:
-    """Converts a list item (string or dict) into a single display string."""
-    if isinstance(item, dict):
-        # Join key-value pairs for better display
-        return " | ".join(f"{k.replace('_', ' ').title()}: {v}" for k, v in item.items() if v)
-    elif isinstance(item, str):
-        return item
-    else:
-        return str(item)
-
 def dump_to_excel(parsed_json, filename):
     """Dumps parsed JSON data to an Excel file."""
     wb = openpyxl.Workbook()
@@ -423,9 +400,8 @@ def dump_to_excel(parsed_json, filename):
     section_order = ['name', 'email', 'phone', 'github', 'linkedin', 'experience', 'education', 'skills', 'projects', 'certifications', 'strength', 'personal_details']
     
     for section_key in section_order:
-        # Use .get() for safe access here too
-        if section_key in parsed_json and parsed_json.get(section_key):
-            content = parsed_json.get(section_key)
+        if section_key in parsed_json and parsed_json[section_key]:
+            content = parsed_json[section_key]
             
             if section_key in ['name', 'email', 'phone', 'github', 'linkedin']:
                 ws.append([section_key.replace('_', ' ').title(), str(content)])
@@ -436,8 +412,7 @@ def dump_to_excel(parsed_json, filename):
                 if isinstance(content, list):
                     for item in content:
                         if item:
-                            # Use the robust string converter here too
-                            ws.append(["", convert_to_flat_string(item)])
+                            ws.append(["", str(item)])
                 elif isinstance(content, dict):
                     for k, v in content.items():
                         if v:
@@ -454,7 +429,13 @@ def parse_and_store_resume(uploaded_file, file_name_key='default'):
     Handles file upload, parsing, and stores results.
     """
     
+    # Check if the input is a valid Streamlit UploadedFile object
     if not isinstance(uploaded_file, UploadedFile):
+        # We allow a very simple structure for the pasted text option to pass through
+        if getattr(uploaded_file, 'name', None) == 'Pasted_CV.txt':
+            # This case should be handled by the calling function (candidate_dashboard)
+            return {"error": "Internal Error: Pasted text path should be handled outside this function.", "full_text": ""}
+        
         st.error(f"Internal Error: Expected a single file, but received object type: {type(uploaded_file)}. Cannot parse.")
         return {"error": "Invalid file input type passed to parser.", "full_text": ""}
 
@@ -479,7 +460,6 @@ def parse_and_store_resume(uploaded_file, file_name_key='default'):
     excel_data = None
     if file_name_key == 'single_resume_candidate':
         try:
-            # Use .get() here for safe access to 'name'
             name = parsed.get('name', 'candidate').replace(' ', '_').strip()
             name = "".join(c for c in name if c.isalnum() or c in ('_', '-')).rstrip()
             if not name: name = "candidate"
@@ -492,7 +472,6 @@ def parse_and_store_resume(uploaded_file, file_name_key='default'):
         "parsed": parsed,
         "full_text": text,
         "excel_data": excel_data,
-        # Use .get() for safe access to 'name'
         "name": parsed.get('name', uploaded_file.name.split('.')[0])
     }
 
@@ -1204,18 +1183,10 @@ def generate_cv_html(parsed_data):
     html_content += f"<h1>{parsed_data.get('name', 'Candidate Name')}</h1>"
     
     contact_parts = []
-    if parsed_data.get('email'): contact_parts.append(f"<span>📧 {parsed_data.get('email')}</span>") # FIX: Use .get() here too (though likely safe)
-    if parsed_data.get('phone'): contact_parts.append(f"<span>📱 {parsed_data.get('phone')}</span>")
-    if parsed_data.get('linkedin'): 
-        # FIX: Use .get() for the URL itself
-        linkedin_url = parsed_data.get('linkedin')
-        linkedin_display = linkedin_url.split('/')[-1] if linkedin_url else 'LinkedIn'
-        contact_parts.append(f"<span>🔗 <a href='{linkedin_url}'>{linkedin_display}</a></span>")
-    if parsed_data.get('github'): 
-        # FIX: Use .get() for the URL itself
-        github_url = parsed_data.get('github')
-        github_display = github_url.split('/')[-1] if github_url else 'GitHub'
-        contact_parts.append(f"<span>💻 <a href='{github_url}'>{github_display}</a></span>")
+    if parsed_data.get('email'): contact_parts.append(f"<span>📧 {parsed_data['email']}</span>")
+    if parsed_data.get('phone'): contact_parts.append(f"<span>📱 {parsed_data['phone']}</span>")
+    if parsed_data.get('linkedin'): contact_parts.append(f"<span>🔗 <a href='{parsed_data['linkedin']}'>{parsed_data.get('linkedin', 'LinkedIn').split('/')[-1] if parsed_data.get('linkedin') else 'LinkedIn'}</a></span>")
+    if parsed_data.get('github'): contact_parts.append(f"<span>💻 <a href='{parsed_data['github']}'>{parsed_data.get('github', 'GitHub').split('/')[-1] if parsed_data.get('github') else 'GitHub'}</a></span>")
     
     html_content += f'<div class="contact-info">{" | ".join(contact_parts)}</div>'
     html_content += '</div>'
@@ -1226,11 +1197,11 @@ def generate_cv_html(parsed_data):
     for k in section_order:
         v = parsed_data.get(k)
         
-        # Skip contact details already handled
-        if k in ['name', 'email', 'phone', 'linkedin', 'github']: continue 
-
         if v and (isinstance(v, str) and v.strip() or isinstance(v, list) and v):
             
+            # Skip contact details already handled
+            if k in ['name', 'email', 'phone', 'linkedin', 'github']: continue 
+
             html_content += f'<div class="section"><h2>{k.replace("_", " ").title()}</h2>'
             html_content += '<div class="item-list">'
             
@@ -1240,9 +1211,7 @@ def generate_cv_html(parsed_data):
                 html_content += '<ul>'
                 for item in v:
                     if item: 
-                        # FIX: Use the robust string converter for list items
-                        item_str = convert_to_flat_string(item)
-                        html_content += f"<li>{item_str}</li>"
+                        html_content += f"<li>{item}</li>"
                 html_content += '</ul>'
             else:
                 html_content += f"<p>{v}</p>"
@@ -1258,34 +1227,20 @@ def cv_management_tab_content():
     st.markdown("### 1. Form Based CV Builder")
     st.info("Fill out the details below to generate a parsed CV that can be used immediately for matching and interview prep, or start by parsing a file in the 'Resume Parsing' tab.")
 
-    # CRITICAL FIX: Robustly initialize the form data from parsed data or defaults
+    # Initialize the parsed data if not already existing
     default_parsed = {
         "name": "", "email": "", "phone": "", "linkedin": "", "github": "",
         "skills": [], "experience": [], "education": [], "certifications": [], 
         "projects": [], "strength": [], "personal_details": ""
     }
     
+    # Use a specific session state key for form data, initializing from parsed if available
     if "cv_form_data" not in st.session_state:
         # Load existing parsed data or default if the tab is opened for the first time
-        # Use .get() defensively for ALL fields loaded from parsed data
         if st.session_state.get('parsed', {}).get('name'):
-            st.session_state.cv_form_data = {
-                "name": st.session_state.parsed.get('name', ""),
-                "email": st.session_state.parsed.get('email', ""),
-                "phone": st.session_state.parsed.get('phone', ""),
-                "linkedin": st.session_state.parsed.get('linkedin', ""),
-                "github": st.session_state.parsed.get('github', ""),
-                "skills": st.session_state.parsed.get('skills', []),
-                "experience": st.session_state.parsed.get('experience', []),
-                "education": st.session_state.parsed.get('education', []),
-                "certifications": st.session_state.parsed.get('certifications', []), 
-                "projects": st.session_state.parsed.get('projects', []), 
-                "strength": st.session_state.parsed.get('strength', []), 
-                "personal_details": st.session_state.parsed.get('personal_details', "")
-            }
+            st.session_state.cv_form_data = st.session_state.parsed.copy()
         else:
             st.session_state.cv_form_data = default_parsed
-            
     
     # --- CV Builder Form ---
     with st.form("cv_builder_form"):
@@ -1317,7 +1272,6 @@ def cv_management_tab_content():
         with col4:
             st.session_state.cv_form_data['linkedin'] = st.text_input(
                 "LinkedIn Profile URL", 
-                # Use .get() defensively on the form data itself, which is now safely initialized
                 value=st.session_state.cv_form_data.get('linkedin', ''), 
                 key="cv_linkedin"
             )
@@ -1341,13 +1295,8 @@ def cv_management_tab_content():
         st.markdown("---")
         st.subheader("Technical Sections (One Item per Line)")
 
-        # FIX: Convert list of items to a display string, robustly handling dicts
-        def list_to_text_area_string(data_list: List[Union[str, Dict[str, Any]]]) -> str:
-            if not isinstance(data_list, list): return ""
-            return "\n".join([convert_to_flat_string(item) for item in data_list])
-
         # Skills
-        skills_text = list_to_text_area_string(st.session_state.cv_form_data.get('skills', []))
+        skills_text = "\n".join(st.session_state.cv_form_data.get('skills', []))
         new_skills_text = st.text_area(
             "Key Skills (Technical and Soft)", 
             value=skills_text,
@@ -1357,7 +1306,7 @@ def cv_management_tab_content():
         st.session_state.cv_form_data['skills'] = [s.strip() for s in new_skills_text.split('\n') if s.strip()]
         
         # Experience
-        experience_text = list_to_text_area_string(st.session_state.cv_form_data.get('experience', []))
+        experience_text = "\n".join(st.session_state.cv_form_data.get('experience', []))
         new_experience_text = st.text_area(
             "Professional Experience (Job Roles, Companies, Dates, Key Responsibilities)", 
             value=experience_text,
@@ -1367,7 +1316,7 @@ def cv_management_tab_content():
         st.session_state.cv_form_data['experience'] = [e.strip() for e in new_experience_text.split('\n') if e.strip()]
 
         # Education
-        education_text = list_to_text_area_string(st.session_state.cv_form_data.get('education', []))
+        education_text = "\n".join(st.session_state.cv_form_data.get('education', []))
         new_education_text = st.text_area(
             "Education (Degrees, Institutions, Dates)", 
             value=education_text,
@@ -1377,7 +1326,7 @@ def cv_management_tab_content():
         st.session_state.cv_form_data['education'] = [d.strip() for d in new_education_text.split('\n') if d.strip()]
         
         # Certifications
-        certifications_text = list_to_text_area_string(st.session_state.cv_form_data.get('certifications', []))
+        certifications_text = "\n".join(st.session_state.cv_form_data.get('certifications', []))
         new_certifications_text = st.text_area(
             "Certifications (Name, Issuing Body, Date)", 
             value=certifications_text,
@@ -1387,7 +1336,7 @@ def cv_management_tab_content():
         st.session_state.cv_form_data['certifications'] = [c.strip() for c in new_certifications_text.split('\n') if c.strip()]
         
         # Projects
-        projects_text = list_to_text_area_string(st.session_state.cv_form_data.get('projects', []))
+        projects_text = "\n".join(st.session_state.cv_form_data.get('projects', []))
         new_projects_text = st.text_area(
             "Projects (Name, Description, Technologies)", 
             value=projects_text,
@@ -1397,7 +1346,7 @@ def cv_management_tab_content():
         st.session_state.cv_form_data['projects'] = [p.strip() for p in new_projects_text.split('\n') if p.strip()]
         
         # Strengths
-        strength_text = list_to_text_area_string(st.session_state.cv_form_data.get('strength', []))
+        strength_text = "\n".join(st.session_state.cv_form_data.get('strength', []))
         new_strength_text = st.text_area(
             "Strengths / Key Personal Qualities (One per line)", 
             value=strength_text,
@@ -1425,8 +1374,7 @@ def cv_management_tab_content():
             if v:
                 compiled_text += f"{k.replace('_', ' ').title()}:\n"
                 if isinstance(v, list):
-                    # FIX: Use the robust string converter for compilation
-                    compiled_text += "\n".join([f"- {convert_to_flat_string(item)}" for item in v if item]) + "\n\n"
+                    compiled_text += "\n".join([f"- {item}" for item in v]) + "\n\n"
                 else:
                     compiled_text += str(v) + "\n\n"
         st.session_state.full_text = compiled_text
@@ -1457,13 +1405,13 @@ def cv_management_tab_content():
             
             # --- Personal Info (Header) ---
             if parsed_data.get('name'):
-                md += f"# **{parsed_data.get('name')}**\n\n"
+                md += f"# **{parsed_data['name']}**\n\n"
             
             contact_info = []
-            if parsed_data.get('email'): contact_info.append(parsed_data.get('email'))
-            if parsed_data.get('phone'): contact_info.append(parsed_data.get('phone'))
-            if parsed_data.get('linkedin'): contact_info.append(f"[LinkedIn]({parsed_data.get('linkedin')})")
-            if parsed_data.get('github'): contact_info.append(f"[GitHub]({parsed_data.get('github')})")
+            if parsed_data.get('email'): contact_info.append(parsed_data['email'])
+            if parsed_data.get('phone'): contact_info.append(parsed_data['phone'])
+            if parsed_data.get('linkedin'): contact_info.append(f"[LinkedIn]({parsed_data['linkedin']})")
+            if parsed_data.get('github'): contact_info.append(f"[GitHub]({parsed_data['github']})")
             
             if contact_info:
                 md += f"| {' | '.join(contact_info)} |\n"
@@ -1488,10 +1436,8 @@ def cv_management_tab_content():
                     elif isinstance(v, list):
                         for item in v:
                             if item: 
-                                # FIX: Use the robust string converter for list items
-                                item_str = convert_to_flat_string(item)
                                 # Use bullet points for list items (Experience, Skills, Projects, etc.)
-                                md += f"- {item_str}\n"
+                                md += f"- {item}\n"
                         md += "\n"
                     else:
                         # Fallback for any other string
@@ -1579,7 +1525,7 @@ def candidate_dashboard():
         
         # Check if a resume is currently loaded into the main parsing variables
         if st.session_state.parsed.get("name"):
-            st.success(f"Currently loaded: **{st.session_state.parsed.get('name')}**")
+            st.success(f"Currently loaded: **{st.session_state.parsed['name']}**")
         elif st.session_state.full_text:
             st.warning("Resume content is loaded, but parsing may have errors.")
         else:
@@ -1601,24 +1547,24 @@ def candidate_dashboard():
     with tab_cv_mgmt:
         cv_management_tab_content()
 
-    # --- TAB 1: Resume Parsing (MODIFIED TO ADD PASTE OPTION) ---
+    # --- TAB 1: Resume Parsing (FIXED: Added Paste Text Option) ---
     with tab1:
         st.header("Resume Upload and Parsing")
         
-        # NEW: Selection for Input Method
-        input_method = st.radio(
-            "Choose Input Method",
-            ["Upload File", "Paste Text"],
-            key="resume_input_method_candidate",
-            horizontal=True
-        )
+        # 1. Upload/Input Method Section
+        st.markdown("### 1. Input Resume Content") 
         
-        st.markdown("---")
+        # New radio button to select input method
+        input_method = st.radio(
+            "Select Input Method",
+            ["Upload File", "Paste Text"],
+            key="parsing_input_method"
+        )
 
-        # 1. Upload Section (Conditional based on radio button)
+        st.markdown("---")
+        
+        # --- UPLOAD FILE SECTION (Existing Logic) ---
         if input_method == "Upload File":
-            st.markdown("### 1. Upload Resume") 
-            
             uploaded_file = st.file_uploader( 
                 "Choose PDF or DOCX file", 
                 type=["pdf", "docx"], 
@@ -1627,102 +1573,110 @@ def candidate_dashboard():
             )
 
             if uploaded_file is not None:
-                # We use a temporary session state variable to hold the file path/object
-                # which is checked in the parsing step
                 st.session_state.candidate_uploaded_resumes = [uploaded_file] 
-                st.session_state.candidate_pasted_text = "" # Clear paste text
-                st.toast("Resume uploaded successfully.")
+                st.session_state.pasted_resume_text = "" # Clear paste text if file is uploaded
+                st.toast("Resume file uploaded successfully.")
             elif st.session_state.candidate_uploaded_resumes and uploaded_file is None:
                  st.session_state.candidate_uploaded_resumes = []
                  st.session_state.parsed = {}
                  st.session_state.full_text = ""
                  st.toast("Upload cleared.")
-
-        # 1. Paste Section (Conditional based on radio button)
-        elif input_method == "Paste Text":
-            st.markdown("### 1. Paste Your CV")
             
+            file_to_parse = st.session_state.candidate_uploaded_resumes[0] if st.session_state.candidate_uploaded_resumes else None
+            
+        # --- PASTE TEXT SECTION (NEW LOGIC) ---
+        elif input_method == "Paste Text":
+            # Initialize or retrieve paste buffer
+            if 'pasted_resume_text' not in st.session_state:
+                st.session_state.pasted_resume_text = ""
+                
             pasted_text = st.text_area(
-                "Paste your resume text here (PDF/DOCX content)",
+                "Paste your entire resume text here",
+                value=st.session_state.pasted_resume_text,
                 height=300,
-                key='candidate_paste_text_area'
+                key="candidate_resume_paste_area"
             )
             
             if pasted_text:
-                st.session_state.candidate_pasted_text = pasted_text
-                st.session_state.candidate_uploaded_resumes = [] # Clear uploaded file
+                st.session_state.pasted_resume_text = pasted_text
+                # Create a dummy object structure for parsing logic to recognize it as the source
+                class PastedTextFile:
+                    def __init__(self, content):
+                        self.name = 'Pasted_CV.txt'
+                        self.content = content
+                        self.type = 'text/plain'
+                    def getbuffer(self):
+                        return self.content.encode('utf-8')
+                
+                file_to_parse = PastedTextFile(pasted_text)
+                
+                # Clear file upload list if we switch to paste
+                st.session_state.candidate_uploaded_resumes = []
+            else:
+                file_to_parse = None
 
         st.markdown("---")
 
-        # 2. Parse Uploaded/Pasted Resume (Unified Logic)
-        st.markdown("### 2. Parse Data")
+        # 2. Parse Content
+        st.markdown("### 2. Parse Content")
         
-        is_file_ready = bool(st.session_state.candidate_uploaded_resumes)
-        is_text_ready = bool(st.session_state.candidate_pasted_text and st.session_state.candidate_pasted_text.strip())
-        
-        if is_file_ready:
-            file_to_parse = st.session_state.candidate_uploaded_resumes[0]
-            parse_button_label = f"Parse and Load: **{file_to_parse.name}**"
-        elif is_text_ready:
-            parse_button_label = "Parse and Load Pasted Text"
-        else:
-            parse_button_label = "Parse and Load Data"
-
-
-        if is_file_ready or is_text_ready:
+        if file_to_parse:
             
-            if st.button(parse_button_label, use_container_width=True):
-                
-                with st.spinner(f"Parsing data... This may take a moment."):
+            file_name = file_to_parse.name
+            
+            if st.button(f"Parse and Load: **{file_name}**", use_container_width=True):
+                with st.spinner(f"Parsing {file_name}..."):
                     
-                    # --- Unified Parsing Logic Start ---
                     result = None
-                    if is_file_ready:
-                        # Logic for uploaded file
-                        file_to_parse = st.session_state.candidate_uploaded_resumes[0]
-                        result = parse_and_store_resume(file_to_parse, file_name_key='single_resume_candidate')
+                    
+                    # Handle the pasted text dummy file
+                    if file_name == 'Pasted_CV.txt':
+                        text = st.session_state.pasted_resume_text
                         
-                    elif is_text_ready:
-                        # Logic for pasted text (Simulate the result structure)
-                        text = st.session_state.candidate_pasted_text
-                        
-                        parsed = parse_with_llm(text, return_type='json')
-                        
-                        if "error" in parsed:
-                            result = {"error": parsed.get('error', 'Unknown parsing error'), "full_text": text}
+                        if not text.strip():
+                            st.error("Pasted area is empty. Please paste your resume text.")
+                            # Exit parse attempt
                         else:
-                            # For pasted text, generate a generic name and excel data is skipped for simplicity
-                            result = {
-                                "parsed": parsed,
-                                "full_text": text,
-                                "excel_data": None, 
-                                # Use .get() here for safety
-                                "name": parsed.get('name', 'Pasted_CV')
-                            }
-                    # --- Unified Parsing Logic End ---
+                            parsed = parse_with_llm(text, return_type='json')
+                            
+                            if "error" not in parsed:
+                                result = {
+                                    'parsed': parsed,
+                                    'full_text': text,
+                                    'excel_data': None, 
+                                    'name': parsed.get('name', 'Pasted Resume') 
+                                }
+                            else:
+                                result = {"error": parsed.get('error', 'Unknown error'), "full_text": text}
+                    
+                    # Handle the uploaded file (PDF/DOCX)
+                    else:
+                        result = parse_and_store_resume(file_to_parse, file_name_key='single_resume_candidate')
 
+                    
+                    # --- Common Result Handling ---
                     if result and "error" not in result:
                         st.session_state.parsed = result['parsed']
                         st.session_state.full_text = result['full_text']
-                        st.session_state.excel_data = result['excel_data'] 
+                        if 'excel_data' in result:
+                             st.session_state.excel_data = result['excel_data'] 
                         st.session_state.parsed['name'] = result['name'] 
                         
-                        # Clear interview prep state when a new resume is loaded
                         clear_interview_state()
                         
                         st.success(f"✅ Successfully loaded and parsed **{result['name']}**.")
                         st.info("View, edit, and download the parsed data in the **CV Management** tab.") 
-                        # Important: Update the CV form data with the newly parsed data
-                        # This should be safe now due to the fix in cv_management_tab_content
-                        st.session_state.cv_form_data = result['parsed'].copy()
                     elif result:
-                        st.error(f"Parsing failed: {result['error']}")
-                        st.session_state.parsed = {"error": result['error'], "name": "Error"}
+                        st.error(f"Parsing failed for {file_name}: {result['error']}")
+                        st.session_state.parsed = {"error": result['error'], "name": file_name}
                         st.session_state.full_text = result['full_text'] or ""
-                    
         else:
-            st.info("Please either **Upload a file** or **Paste your CV text** in section 1 to begin.")
+            if input_method == "Upload File":
+                st.info("No resume file is currently uploaded. Please upload a file in section 1.")
+            else:
+                st.info("No text detected. Please paste your resume text above to enable parsing.")
 
+            
         st.markdown("---")
 
 
@@ -2138,17 +2092,19 @@ def main():
     
     # Resume Parsing Upload State
     if 'candidate_uploaded_resumes' not in st.session_state: st.session_state.candidate_uploaded_resumes = []
-    if 'candidate_pasted_text' not in st.session_state: st.session_state.candidate_pasted_text = "" # NEW STATE for pasted text
+    if 'pasted_resume_text' not in st.session_state: st.session_state.pasted_resume_text = ""
     
     # Interview Prep Q&A State (NEW)
     if 'interview_qa' not in st.session_state: st.session_state.interview_qa = [] 
     if 'evaluation_report' not in st.session_state: st.session_state.evaluation_report = ""
         
     # CV Builder Form State (NEW)
-    # NOTE: The content for st.session_state.cv_form_data is now handled safely within cv_management_tab_content()
-    # But we initialize it here as an empty object for safety if that function isn't called first.
     if "cv_form_data" not in st.session_state: 
-        st.session_state.cv_form_data = {} 
+        st.session_state.cv_form_data = {
+            "name": "", "email": "", "phone": "", "linkedin": "", "github": "",
+            "skills": [], "experience": [], "education": [], "certifications": [], 
+            "projects": [], "strength": [], "personal_details": ""
+        }
 
 
     # --- Page Routing ---
