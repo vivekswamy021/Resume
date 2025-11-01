@@ -1253,6 +1253,16 @@ def cv_management_tab_content():
             key="cv_projects"
         )
         st.session_state.cv_form_data['projects'] = [p.strip() for p in new_projects_text.split('\n') if p.strip()]
+        
+        # Strengths
+        strength_text = "\n".join(st.session_state.cv_form_data.get('strength', []))
+        new_strength_text = st.text_area(
+            "Strengths / Key Personal Qualities (One per line)", 
+            value=strength_text,
+            height=100,
+            key="cv_strength"
+        )
+        st.session_state.cv_form_data['strength'] = [s.strip() for s in new_strength_text.split('\n') if s.strip()]
 
         submit_form_button = st.form_submit_button("Generate and Load CV Data", use_container_width=True)
 
@@ -1288,24 +1298,62 @@ def cv_management_tab_content():
         st.markdown("---")
         st.subheader("2. Loaded CV Data Preview")
         
-        # Use a list of tuples to ensure order
-        display_data = [
-            ("Name", st.session_state.parsed.get('name')),
-            ("Email", st.session_state.parsed.get('email')),
-            ("Phone", st.session_state.parsed.get('phone')),
-            ("Skills (Count)", len(st.session_state.parsed.get('skills', []))),
-            ("Experience (Count)", len(st.session_state.parsed.get('experience', []))),
-            ("Education (Count)", len(st.session_state.parsed.get('education', []))),
-            ("Certifications (Count)", len(st.session_state.parsed.get('certifications', []))),
-            ("Projects (Count)", len(st.session_state.parsed.get('projects', []))),
-        ]
+        # --- MODIFIED PREVIEW LOGIC: Use parsing logic to generate formatted Markdown ---
         
-        col_list = st.columns(3)
-        for i, (label, value) in enumerate(display_data):
-            with col_list[i % 3]:
-                st.metric(label, value)
+        def format_parsed_json_to_markdown(parsed_data):
+            """Formats the parsed JSON data into a clean, CV-like Markdown structure."""
+            md = ""
+            
+            # --- Personal Info (Header) ---
+            if parsed_data.get('name'):
+                md += f"# **{parsed_data['name']}**\n\n"
+            
+            contact_info = []
+            if parsed_data.get('email'): contact_info.append(parsed_data['email'])
+            if parsed_data.get('phone'): contact_info.append(parsed_data['phone'])
+            if parsed_data.get('linkedin'): contact_info.append(f"[LinkedIn]({parsed_data['linkedin']})")
+            if parsed_data.get('github'): contact_info.append(f"[GitHub]({parsed_data['github']})")
+            
+            if contact_info:
+                md += f"| {' | '.join(contact_info)} |\n"
+                md += "| " + " | ".join(["---"] * len(contact_info)) + " |\n\n"
+            
+            # --- Section Content ---
+            section_order = ['personal_details', 'experience', 'projects', 'education', 'certifications', 'skills', 'strength']
+            
+            for k in section_order:
+                v = parsed_data.get(k)
                 
-        # Download Button (NEW)
+                # Skip contact details already handled in header
+                if k in ['name', 'email', 'phone', 'linkedin', 'github']: continue 
+
+                if v and (isinstance(v, str) and v.strip() or isinstance(v, list) and v):
+                    
+                    md += f"## **{k.replace('_', ' ').upper()}**\n"
+                    md += "---\n"
+                    
+                    if k == 'personal_details' and isinstance(v, str):
+                        md += f"{v}\n\n"
+                    elif isinstance(v, list):
+                        for item in v:
+                            if item: 
+                                # Use bullet points for list items (Experience, Skills, Projects, etc.)
+                                md += f"- {item}\n"
+                        md += "\n"
+                    else:
+                        # Fallback for any other string
+                        md += f"{v}\n\n"
+            return md
+
+        # Filter for non-empty/non-list fields before sending to formatter
+        filled_data_for_preview = {k: v for k, v in st.session_state.parsed.items() if v and (isinstance(v, str) and v.strip() or isinstance(v, list) and v)}
+        cv_markdown_preview = format_parsed_json_to_markdown(filled_data_for_preview)
+        
+        st.markdown(cv_markdown_preview)
+
+        # --- END MODIFIED PREVIEW LOGIC ---
+
+        # Download Button
         st.markdown("---")
         st.download_button(
             label="⬇️ Download CV Data as Text File",
@@ -1315,10 +1363,6 @@ def cv_management_tab_content():
             key="download_cv_txt"
         )
 
-
-# -------------------------
-# UI PAGES: Candidate Dashboard (MODIFIED)
-# -------------------------
 
 def candidate_dashboard():
     st.header("👩‍🎓 Candidate Dashboard")
