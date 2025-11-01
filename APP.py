@@ -189,6 +189,10 @@ def parse_with_llm(text, return_type='json'):
                     for sub_k, sub_v in v.items():
                         if sub_v:
                             md += f"  - {sub_k.replace('_', ' ').title()}: {sub_v}\n"
+                    # Handle a complex structure that might be an array of dicts (e.g., Experience)
+                    # This is better handled in the Markdown generation function, but keeping a fallback
+                    # if the LLM output is non-standard.
+                    # Fallback removed for conciseness as LLM is instructed to use lists/dicts.
                 else:
                     md += f"  {v}\n"
                 md += "\n"
@@ -1226,7 +1230,7 @@ def generate_cv_html(parsed_data):
 def cv_management_tab_content():
     st.header("📝 Prepare Your CV")
     st.markdown("### 1. Form Based CV Builder")
-    st.info("Fill out the details below to generate a parsed CV that can be used immediately for matching and interview prep, or start by parsing a file in the 'Resume Parsing' tab.")
+    st.info("Fill out the details below to generate a parsed CV that can be used immediately for matching and interview prep, or start by parsing a file in the **Resume Parsing** tab.")
 
     # Initialize the parsed data if not already existing
     default_parsed = {
@@ -1532,23 +1536,19 @@ def candidate_dashboard():
         else:
             st.info("Please upload a file or use the CV builder in 'CV Management' to begin.")
 
-    # Main Content Tabs (Added CV Management tab)
-    tab_cv_mgmt, tab1, tab2, tab3, tab4, tab5 = st.tabs([
-        "✍️ CV Management", 
-        "📄 Resume Parsing", 
-        "💬 Resume Chatbot (Q&A)", 
-        "❓ Interview Prep", 
-        "📚 JD Management", 
-        "🎯 Batch JD Match" 
+    # Main Content Tabs (Updated Tab Order)
+    tab1, tab_cv_mgmt, tab2, tab3, tab4, tab5 = st.tabs([
+        "📄 Resume Parsing",      # Tab 1 (Now First)
+        "✍️ CV Management",       # Tab_cv_mgmt (Now Second)
+        "💬 Resume Chatbot (Q&A)", # Tab 2
+        "❓ Interview Prep",       # Tab 3
+        "📚 JD Management",        # Tab 4
+        "🎯 Batch JD Match"        # Tab 5
     ])
     
     is_resume_parsed = bool(st.session_state.get('parsed', {}).get('name')) or bool(st.session_state.get('full_text'))
     
-    # --- TAB 0: CV Management ---
-    with tab_cv_mgmt:
-        cv_management_tab_content()
-
-    # --- TAB 1: Resume Parsing (FIXED: Confirmation text removed) ---
+    # --- TAB 1: Resume Parsing (Now First) ---
     with tab1:
         st.header("Resume Upload and Parsing")
         
@@ -1594,7 +1594,7 @@ def candidate_dashboard():
                         clear_interview_state()
                         
                         st.success(f"✅ Successfully loaded and parsed **{result['name']}**.")
-                        # --- REMOVED LINE HERE: st.info("View, edit, and download the parsed data in the **CV Management** tab.") 
+                        # Confirmation text removed in previous step.
                     else:
                         st.error(f"Parsing failed for {file_to_parse.name}: {result['error']}")
                         st.session_state.parsed = {"error": result['error'], "name": file_to_parse.name}
@@ -1605,6 +1605,9 @@ def candidate_dashboard():
             
         st.markdown("---")
             
+    # --- TAB 0: CV Management (Now Second) ---
+    with tab_cv_mgmt:
+        cv_management_tab_content()
 
     # --- TAB 2: Resume Chatbot (Q&A) ---
     with tab2:
