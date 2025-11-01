@@ -6,7 +6,7 @@ import openpyxl
 import json
 import tempfile
 from groq import Groq
-from gtts import gTTS 
+from gtts import gTTS # Imported but not used in this version
 import traceback
 import re
 from dotenv import load_dotenv 
@@ -24,8 +24,6 @@ GROQ_MODEL = "llama-3.1-8b-instant"
 # Options for LLM functions
 section_options = ["name", "email", "phone", "skills", "education", "experience", "certifications", "projects", "strength", "personal_details", "github", "linkedin", "full resume"]
 question_section_options = ["skills","experience", "certifications", "projects", "education"] 
-answer_types = [("Point-wise", "points"), ("Detailed", "detailed"), ("Key Points", "key")]
-
 
 # Load environment variables from .env file
 load_dotenv()
@@ -1359,7 +1357,7 @@ def cv_management_tab_content():
     st.markdown("---")
     st.subheader("2. Loaded CV Data Preview")
     
-    # --- TABBED VIEW SECTION ---
+    # --- TABBED VIEW SECTION (PDF/MARKDOWN/JSON) ---
     if st.session_state.get('parsed', {}).get('name'):
         
         # Filter for non-empty/non-list fields before sending to formatter
@@ -1422,10 +1420,31 @@ def cv_management_tab_content():
             cv_markdown_preview = format_parsed_json_to_markdown(filled_data_for_preview)
             st.markdown(cv_markdown_preview)
 
+            # Markdown Download Button
+            st.download_button(
+                label="⬇️ Download CV as Markdown (.md)",
+                data=cv_markdown_preview,
+                file_name=f"{st.session_state.parsed.get('name', 'Generated_CV').replace(' ', '_')}_CV_Document.md",
+                mime="text/markdown",
+                key="download_cv_markdown_final"
+            )
+
+
         # --- JSON View ---
         with tab_json:
             st.json(st.session_state.parsed)
             st.info("This is the raw, structured data used by the AI tools.")
+
+            # JSON Download Button
+            json_output = json.dumps(st.session_state.parsed, indent=2)
+            st.download_button(
+                label="⬇️ Download CV as JSON File",
+                data=json_output,
+                file_name=f"{st.session_state.parsed.get('name', 'Generated_CV').replace(' ', '_')}_CV_Data.json",
+                mime="application/json",
+                key="download_cv_json_final"
+            )
+
 
         # --- PDF View (Download) ---
         with tab_pdf:
@@ -1435,7 +1454,7 @@ def cv_management_tab_content():
             html_output = generate_cv_html(filled_data_for_preview)
 
             st.download_button(
-                label="⬇️ Download CV as HTML File",
+                label="⬇️ Download CV as Print-Ready HTML File (for PDF conversion)",
                 data=html_output,
                 file_name=f"{st.session_state.parsed.get('name', 'Generated_CV').replace(' ', '_')}_CV_Document.html",
                 mime="text/html",
@@ -1443,7 +1462,7 @@ def cv_management_tab_content():
             )
             
             st.markdown("---")
-            st.markdown("### Raw Text Data Download")
+            st.markdown("### Raw Text Data Download (for utility)")
             st.download_button(
                 label="⬇️ Download All CV Data as Raw Text (.txt)",
                 data=st.session_state.full_text,
@@ -1453,7 +1472,7 @@ def cv_management_tab_content():
             )
             
     else:
-        st.info("Please fill out the form above and click 'Generate and Load CV Data' to see the preview.")
+        st.info("Please fill out the form above and click 'Generate and Load CV Data' to see the preview and download options.")
 
 
 def candidate_dashboard():
