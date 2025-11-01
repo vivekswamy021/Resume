@@ -1129,7 +1129,7 @@ def admin_dashboard():
             st.info("No resumes loaded to calculate status breakdown.")
 
             
-# --- NEW HELPER FUNCTION FOR CV MANAGEMENT ---
+# --- NEW HELPER FUNCTION FOR CV MANAGEMENT (MODIFIED) ---
 
 def cv_management_tab_content():
     st.header("📝 Prepare Your CV")
@@ -1154,6 +1154,8 @@ def cv_management_tab_content():
     # --- CV Builder Form ---
     with st.form("cv_builder_form"):
         st.subheader("Personal & Contact Details")
+        
+        # Row 1: Name, Email, Phone
         col1, col2, col3 = st.columns(3)
         with col1:
             st.session_state.cv_form_data['name'] = st.text_input(
@@ -1174,6 +1176,7 @@ def cv_management_tab_content():
                 key="cv_phone"
             )
         
+        # Row 2: LinkedIn, GitHub
         col4, col5 = st.columns(2)
         with col4:
             st.session_state.cv_form_data['linkedin'] = st.text_input(
@@ -1187,27 +1190,34 @@ def cv_management_tab_content():
                 value=st.session_state.cv_form_data.get('github', ''), 
                 key="cv_github"
             )
-
+        
+        # Row 3: Summary/Personal Details (NEW)
         st.markdown("---")
-        st.subheader("Skills")
-        # Skills are stored as a list of strings
+        st.subheader("Summary / Personal Details")
+        st.session_state.cv_form_data['personal_details'] = st.text_area(
+            "Professional Summary or Personal Details (e.g., date of birth, address, nationality)", 
+            value=st.session_state.cv_form_data.get('personal_details', ''), 
+            height=100,
+            key="cv_personal_details"
+        )
+        
+        st.markdown("---")
+        st.subheader("Technical Sections (One Item per Line)")
+
+        # Skills
         skills_text = "\n".join(st.session_state.cv_form_data.get('skills', []))
         new_skills_text = st.text_area(
-            "Enter key technical and soft skills (one skill per line)", 
+            "Key Skills (Technical and Soft)", 
             value=skills_text,
             height=150,
             key="cv_skills"
         )
         st.session_state.cv_form_data['skills'] = [s.strip() for s in new_skills_text.split('\n') if s.strip()]
-
-        st.markdown("---")
-        st.subheader("Experience & Education")
-        st.markdown("**(Tip: Enter each job/degree on a new line for list-based data. Example: 'Data Scientist at Tech Corp (2020-Present): Developed ML models.')**")
         
         # Experience
         experience_text = "\n".join(st.session_state.cv_form_data.get('experience', []))
         new_experience_text = st.text_area(
-            "Professional Experience (Job Roles & Descriptions)", 
+            "Professional Experience (Job Roles, Companies, Dates, Key Responsibilities)", 
             value=experience_text,
             height=150,
             key="cv_experience"
@@ -1223,14 +1233,33 @@ def cv_management_tab_content():
             key="cv_education"
         )
         st.session_state.cv_form_data['education'] = [d.strip() for d in new_education_text.split('\n') if d.strip()]
-
+        
+        # Certifications (NEW)
+        certifications_text = "\n".join(st.session_state.cv_form_data.get('certifications', []))
+        new_certifications_text = st.text_area(
+            "Certifications (Name, Issuing Body, Date)", 
+            value=certifications_text,
+            height=100,
+            key="cv_certifications"
+        )
+        st.session_state.cv_form_data['certifications'] = [c.strip() for c in new_certifications_text.split('\n') if c.strip()]
+        
+        # Projects (NEW)
+        projects_text = "\n".join(st.session_state.cv_form_data.get('projects', []))
+        new_projects_text = st.text_area(
+            "Projects (Name, Description, Technologies)", 
+            value=projects_text,
+            height=150,
+            key="cv_projects"
+        )
+        st.session_state.cv_form_data['projects'] = [p.strip() for p in new_projects_text.split('\n') if p.strip()]
 
         submit_form_button = st.form_submit_button("Generate and Load CV Data", use_container_width=True)
 
     if submit_form_button:
         # 1. Basic validation
         if not st.session_state.cv_form_data['name'] or not st.session_state.cv_form_data['email']:
-            st.error("Please fill in at least your Full Name and Email Address.")
+            st.error("Please fill in at least your **Full Name** and **Email Address**.")
             return
 
         # 2. Update the main session state variables (as if a file was parsed)
@@ -1243,7 +1272,7 @@ def cv_management_tab_content():
             if v:
                 compiled_text += f"{k.replace('_', ' ').title()}:\n"
                 if isinstance(v, list):
-                    compiled_text += "\n".join(v) + "\n\n"
+                    compiled_text += "\n".join([f"- {item}" for item in v]) + "\n\n"
                 else:
                     compiled_text += str(v) + "\n\n"
         st.session_state.full_text = compiled_text
@@ -1267,12 +1296,25 @@ def cv_management_tab_content():
             ("Skills (Count)", len(st.session_state.parsed.get('skills', []))),
             ("Experience (Count)", len(st.session_state.parsed.get('experience', []))),
             ("Education (Count)", len(st.session_state.parsed.get('education', []))),
+            ("Certifications (Count)", len(st.session_state.parsed.get('certifications', []))),
+            ("Projects (Count)", len(st.session_state.parsed.get('projects', []))),
         ]
         
         col_list = st.columns(3)
         for i, (label, value) in enumerate(display_data):
             with col_list[i % 3]:
                 st.metric(label, value)
+                
+        # Download Button (NEW)
+        st.markdown("---")
+        st.download_button(
+            label="⬇️ Download CV Data as Text File",
+            data=st.session_state.full_text,
+            file_name=f"{st.session_state.parsed.get('name', 'Generated_CV').replace(' ', '_')}_CV_Data.txt",
+            mime="text/plain",
+            key="download_cv_txt"
+        )
+
 
 # -------------------------
 # UI PAGES: Candidate Dashboard (MODIFIED)
