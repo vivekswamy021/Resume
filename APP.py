@@ -32,15 +32,26 @@ load_dotenv()
 GROQ_API_KEY = os.getenv('GROQ_API_KEY')
 
 if not GROQ_API_KEY:
-    st.error(
-        "🚨 FATAL ERROR: GROQ_API_KEY environment variable not set. "
-        "Please ensure a '.env' file exists in the script directory with this line: "
-        "GROQ_API_KEY=\"YOUR_KEY_HERE\""
+    # Use st.warning instead of st.error/st.stop to allow the script to run 
+    # if the user is running it without a key, but alert them to the dependency.
+    st.warning(
+        "🚨 WARNING: GROQ_API_KEY environment variable not set. "
+        "AI functionality (Parsing, Matching, Q&A) will not work. "
+        "Please ensure a '.env' file exists with your key."
     )
-    st.stop()
-
-# Initialize Groq Client
-client = Groq(api_key=GROQ_API_KEY)
+    # Initialize a mock client to prevent immediate crash if key is missing, 
+    # although all LLM functions will fail.
+    class MockGroqClient:
+        def chat(self):
+            class Completions:
+                def create(self, **kwargs):
+                    raise ValueError("GROQ_API_KEY not set. AI functions disabled.")
+            return Completions()
+    
+    client = MockGroqClient()
+else:
+    # Initialize Groq Client
+    client = Groq(api_key=GROQ_API_KEY)
 
 
 # -------------------------
@@ -111,6 +122,8 @@ def parse_with_llm(text, return_type='json'):
     """Sends resume text to the LLM for structured information extraction."""
     if text.startswith("Error"):
         return {"error": text, "raw_output": ""}
+    if not GROQ_API_KEY:
+        return {"error": "GROQ_API_KEY not set. Cannot run LLM parsing.", "raw_output": ""}
 
     prompt = f"""Extract the following information from the resume in structured JSON.
     Ensure all relevant details for each category are captured.
@@ -152,6 +165,8 @@ def parse_with_llm(text, return_type='json'):
     except json.JSONDecodeError as e:
         error_msg = f"JSON decoding error from LLM. LLM returned malformed JSON. Error: {e}"
         parsed = {"error": error_msg, "raw_output": content}
+    except ValueError as e: # Catch the MockGroqClient error
+        parsed = {"error": str(e), "raw_output": "AI functions disabled."}
     except Exception as e:
         error_msg = f"LLM API interaction error: {e}"
         parsed = {"error": error_msg, "raw_output": "No LLM response due to API error."}
@@ -188,9 +203,11 @@ def extract_jd_from_linkedin_url(url: str) -> str:
     try:
         job_title = "Data Scientist"
         try:
-            match = re.search(r'/jobs/view/([^/]+)', url)
+            # More robust title extraction from a common LinkedIn job URL format
+            match = re.search(r'/jobs/view/([^/]+)', url) or re.search(r'/jobs/(\w+)', url)
             if match:
-                job_title = match.group(1).replace('-', ' ').title()
+                job_title = match.group(1).split('?')[0].replace('-', ' ').title()
+                if job_title.lower().startswith('view'): job_title = 'Data Scientist' # Fallback
         except:
             pass
 
@@ -228,7 +245,10 @@ def extract_jd_from_linkedin_url(url: str) -> str:
 
 def evaluate_jd_fit(job_description, parsed_json):
     """Evaluates how well a resume fits a given job description, including section-wise scores."""
+    if not GROQ_API_KEY:
+        return "AI Evaluation Disabled: GROQ_API_KEY not set."
     if not job_description.strip(): return "Please paste a job description."
+    if "error" in parsed_json: return "Cannot evaluate due to resume parsing errors."
     
     relevant_resume_data = {
         'Skills': parsed_json.get('skills', 'Not found or empty'),
@@ -280,6 +300,10 @@ def evaluate_jd_fit(job_description, parsed_json):
 
 def evaluate_interview_answers(qa_list, parsed_json):
     """Evaluates the user's answers against the resume content and provides feedback."""
+    if not GROQ_API_KEY:
+        return "AI Evaluation Disabled: GROQ_API_KEY not set."
+    if "error" in parsed_json: return "Cannot evaluate due to resume parsing errors."
+
     
     resume_summary = json.dumps(parsed_json, indent=2)
     
@@ -335,6 +359,10 @@ def evaluate_interview_answers(qa_list, parsed_json):
 
 def generate_interview_questions(parsed_json, section):
     """Generates categorized interview questions using LLM."""
+    if not GROQ_API_KEY:
+        return "AI Functions Disabled: GROQ_API_KEY not set."
+    if "error" in parsed_json: return "Cannot generate questions due to resume parsing errors."
+    
     section_title = section.replace("_", " ").title()
     section_content = parsed_json.get(section, "")
     if isinstance(section_content, (list, dict)):
@@ -451,6 +479,9 @@ def parse_and_store_resume(uploaded_file, file_name_key='default'):
 
 def qa_on_resume(question):
     """Chatbot for Resume (Q&A) using LLM."""
+    if not GROQ_API_KEY:
+        return "AI Chatbot Disabled: GROQ_API_KEY not set."
+        
     parsed_json = st.session_state.parsed
     full_text = st.session_state.full_text
     prompt = f"""Given the following resume information:
@@ -1130,16 +1161,18 @@ def generate_cv_html(parsed_data):
     # Simple CSS for a clean, print-friendly CV look
     css = """
     <style>
-        body { font-family: 'Arial', sans-serif; line-height: 1.5; margin: 40px; }
+        @page { size: A4; margin: 1cm; }
+        body { font-family: 'Arial', sans-serif; line-height: 1.5; margin: 0; padding: 0; font-size: 10pt; }
         .header { text-align: center; border-bottom: 2px solid #333; padding-bottom: 10px; margin-bottom: 20px; }
-        .header h1 { margin: 0; font-size: 2em; }
-        .contact-info { display: flex; justify-content: center; font-size: 0.9em; color: #555; }
-        .contact-info span { margin: 0 10px; }
-        .section { margin-bottom: 25px; }
-        .section h2 { border-bottom: 1px solid #999; padding-bottom: 5px; margin-bottom: 10px; font-size: 1.2em; text-transform: uppercase; }
-        .item-list ul { list-style-type: disc; margin-left: 20px; padding-left: 0; }
-        .item-list ul li { margin-bottom: 5px; }
-        .item-list p { margin: 5px 0 10px 0; }
+        .header h1 { margin: 0; font-size: 1.8em; }
+        .contact-info { display: flex; justify-content: center; font-size: 0.8em; color: #555; }
+        .contact-info span { margin: 0 8px; }
+        .section { margin-bottom: 15px; page-break-inside: avoid; }
+        .section h2 { border-bottom: 1px solid #999; padding-bottom: 3px; margin-bottom: 8px; font-size: 1.1em; text-transform: uppercase; color: #333; }
+        .item-list ul { list-style-type: disc; margin-left: 20px; padding-left: 0; margin-top: 0; }
+        .item-list ul li { margin-bottom: 3px; }
+        .item-list p { margin: 3px 0 8px 0; }
+        a { color: #0056b3; text-decoration: none; }
     </style>
     """
     
@@ -1153,8 +1186,8 @@ def generate_cv_html(parsed_data):
     contact_parts = []
     if parsed_data.get('email'): contact_parts.append(f"<span>📧 {parsed_data['email']}</span>")
     if parsed_data.get('phone'): contact_parts.append(f"<span>📱 {parsed_data['phone']}</span>")
-    if parsed_data.get('linkedin'): contact_parts.append(f"<span>🔗 <a href='{parsed_data['linkedin']}'>LinkedIn</a></span>")
-    if parsed_data.get('github'): contact_parts.append(f"<span>💻 <a href='{parsed_data['github']}'>GitHub</a></span>")
+    if parsed_data.get('linkedin'): contact_parts.append(f"<span>🔗 <a href='{parsed_data['linkedin']}'>{parsed_data.get('linkedin', 'LinkedIn').split('/')[-1] if parsed_data.get('linkedin') else 'LinkedIn'}</a></span>")
+    if parsed_data.get('github'): contact_parts.append(f"<span>💻 <a href='{parsed_data['github']}'>{parsed_data.get('github', 'GitHub').split('/')[-1] if parsed_data.get('github') else 'GitHub'}</a></span>")
     
     html_content += f'<div class="contact-info">{" | ".join(contact_parts)}</div>'
     html_content += '</div>'
@@ -1193,7 +1226,7 @@ def generate_cv_html(parsed_data):
 def cv_management_tab_content():
     st.header("📝 Prepare Your CV")
     st.markdown("### 1. Form Based CV Builder")
-    st.info("Fill out the details below to generate a parsed CV that can be used immediately for matching and interview prep.")
+    st.info("Fill out the details below to generate a parsed CV that can be used immediately for matching and interview prep, or start by parsing a file in the 'Resume Parsing' tab.")
 
     # Initialize the parsed data if not already existing
     default_parsed = {
@@ -1355,7 +1388,7 @@ def cv_management_tab_content():
         st.success(f"✅ CV data for **{st.session_state.parsed['name']}** successfully generated and loaded! You can now use the Chatbot, Match, and Interview Prep tabs.")
         
     st.markdown("---")
-    st.subheader("2. Loaded CV Data Preview")
+    st.subheader("2. Loaded CV Data Preview and Download")
     
     # --- TABBED VIEW SECTION (PDF/MARKDOWN/JSON) ---
     if st.session_state.get('parsed', {}).get('name'):
@@ -1413,7 +1446,7 @@ def cv_management_tab_content():
             return md
 
 
-        tab_markdown, tab_json, tab_pdf = st.tabs(["📝 Markdown View", "💾 JSON View", "⬇️ PDF View (Download)"])
+        tab_markdown, tab_json, tab_pdf = st.tabs(["📝 Markdown View", "💾 JSON View", "⬇️ PDF/HTML Download"])
 
         # --- Markdown View ---
         with tab_markdown:
@@ -1472,7 +1505,7 @@ def cv_management_tab_content():
             )
             
     else:
-        st.info("Please fill out the form above and click 'Generate and Load CV Data' to see the preview and download options.")
+        st.info("Please fill out the form above and click 'Generate and Load CV Data' or parse a resume in the 'Resume Parsing' tab to see the preview and download options.")
 
 
 def candidate_dashboard():
@@ -1511,11 +1544,11 @@ def candidate_dashboard():
     
     is_resume_parsed = bool(st.session_state.get('parsed', {}).get('name')) or bool(st.session_state.get('full_text'))
     
-    # --- TAB 0 (NEW): CV Management ---
+    # --- TAB 0: CV Management ---
     with tab_cv_mgmt:
         cv_management_tab_content()
 
-    # --- TAB 1: Resume Parsing ---
+    # --- TAB 1: Resume Parsing (FIXED: Section 3 Removed) ---
     with tab1:
         st.header("Resume Upload and Parsing")
         
@@ -1560,7 +1593,8 @@ def candidate_dashboard():
                         # Clear interview prep state when a new resume is loaded
                         clear_interview_state()
                         
-                        st.success(f"Successfully loaded and parsed **{result['name']}**.")
+                        st.success(f"✅ Successfully loaded and parsed **{result['name']}**.")
+                        st.info("View, edit, and download the parsed data in the **CV Management** tab.")
                     else:
                         st.error(f"Parsing failed for {file_to_parse.name}: {result['error']}")
                         st.session_state.parsed = {"error": result['error'], "name": file_to_parse.name}
@@ -1571,38 +1605,10 @@ def candidate_dashboard():
             
         st.markdown("---")
             
-        # 3. View Parsed Data (MODIFIED: Removed Section Dropdown/Content)
-        st.markdown("### 3. View Parsed Data")
-        is_resume_parsed = bool(st.session_state.get('parsed', {}).get('name')) or bool(st.session_state.get('full_text'))
-        
-        if is_resume_parsed:
-            output_format = st.radio('Output Format', ['json', 'markdown'], key='format_radio_c')
-
-            parsed = st.session_state.parsed
-            full_text = st.session_state.full_text
-
-            if "error" in parsed:
-                st.error(parsed.get("error", "An unknown error occurred during parsing."))
-            else:
-                if output_format == 'json':
-                    output_str = json.dumps(parsed, indent=2)
-                    st.text_area("Parsed Output (JSON)", output_str, height=350)
-                else:
-                    output_str = parse_with_llm(full_text, return_type='markdown') if full_text else "Full text not available."
-                    st.markdown("#### Parsed Output (Markdown)")
-                    st.markdown(output_str)
-
-                if st.session_state.excel_data:
-                    st.download_button(
-                        label="Download Parsed Data (Excel)",
-                        data=st.session_state.excel_data,
-                        file_name=f"{parsed.get('name', 'candidate').replace(' ', '_')}_parsed_data.xlsx",
-                        mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
-                    )
-                
-        else:
-            st.warning("No resume has been parsed yet. Please click the 'Parse and Load' button in section 2.")
-
+        # --- REMOVED SECTION 3 (View Parsed Data) ---
+        if st.session_state.get('parsed', {}).get('name'):
+            st.markdown("### Next Step")
+            st.markdown("Your resume is loaded! Head over to the **CV Management** tab to **view, edit, and download** your parsed data.")
 
     # --- TAB 2: Resume Chatbot (Q&A) ---
     with tab2:
@@ -1610,6 +1616,10 @@ def candidate_dashboard():
         st.markdown("### Ask any question about the currently loaded resume.")
         if not is_resume_parsed:
             st.warning("Please upload and parse a resume in the 'Resume Parsing' tab first.")
+        elif "error" in st.session_state.parsed:
+             st.error("Cannot use Chatbot: Resume data has parsing errors.")
+        elif not GROQ_API_KEY:
+             st.error("Cannot use Chatbot: GROQ_API_KEY is not configured.")
         else:
             if 'qa_answer' not in st.session_state: st.session_state.qa_answer = ""
             
@@ -1627,11 +1637,13 @@ def candidate_dashboard():
             if st.session_state.get('qa_answer'):
                 st.text_area("Answer", st.session_state.qa_answer, height=150)
 
-    # --- TAB 3: Interview Prep (FIX 1 APPLIED) ---
+    # --- TAB 3: Interview Prep ---
     with tab3:
         st.header("Interview Preparation Tools")
         if not is_resume_parsed or "error" in st.session_state.parsed:
             st.warning("Please upload and successfully parse a resume first.")
+        elif not GROQ_API_KEY:
+             st.error("Cannot use Interview Prep: GROQ_API_KEY is not configured.")
         else:
             if 'iq_output' not in st.session_state: st.session_state.iq_output = ""
             if 'interview_qa' not in st.session_state: st.session_state.interview_qa = [] 
@@ -1639,14 +1651,12 @@ def candidate_dashboard():
             
             st.subheader("1. Generate Interview Questions")
             
-            # --- FIX 1: Clear state on selectbox change ---
             section_choice = st.selectbox(
                 "Select Section", 
                 question_section_options, 
                 key='iq_section_c',
-                on_change=clear_interview_state # Call function to reset state
+                on_change=clear_interview_state 
             )
-            # --- END FIX 1 ---
             
             if st.button("Generate Interview Questions", key='iq_btn_c'):
                 with st.spinner("Generating questions..."):
@@ -1654,11 +1664,9 @@ def candidate_dashboard():
                         raw_questions_response = generate_interview_questions(st.session_state.parsed, section_choice)
                         st.session_state.iq_output = raw_questions_response
                         
-                        # --- Also clear previous state on button click ---
                         st.session_state.interview_qa = [] 
                         st.session_state.evaluation_report = "" 
                         
-                        # Process raw text into structured Q&A list
                         q_list = []
                         current_level = ""
                         for line in raw_questions_response.splitlines():
@@ -1669,7 +1677,7 @@ def candidate_dashboard():
                                 question_text = line[line.find(':') + 1:].strip()
                                 q_list.append({
                                     "question": f"({current_level}) {question_text}",
-                                    "answer": "", # Ensure the answer is empty for new questions
+                                    "answer": "", 
                                     "level": current_level
                                 })
                                 
@@ -1682,39 +1690,29 @@ def candidate_dashboard():
                         st.session_state.iq_output = "Error generating questions."
                         st.session_state.interview_qa = []
 
-
-            # --- INTERACTIVE Q&A SECTION ---
             if st.session_state.get('interview_qa'):
                 st.markdown("---")
                 st.subheader("2. Practice and Record Answers")
                 
-                # Use a form to capture all answers simultaneously
                 with st.form("interview_practice_form"):
                     
-                    # Display each question and provide a text area for the answer
                     for i, qa_item in enumerate(st.session_state.interview_qa):
                         st.markdown(f"**Question {i+1}:** {qa_item['question']}")
                         
-                        # The key is crucial here for state management.
                         answer = st.text_area(
                             f"Your Answer for Q{i+1}", 
-                            # Use stored answer value to persist typing *within* the form session
                             value=st.session_state.interview_qa[i]['answer'], 
                             height=100,
                             key=f'answer_q_{i}',
                             label_visibility='collapsed'
                         )
-                        # Immediately update the session state item (this happens on form submit)
-                        # This line ensures that when the form submits, the updated answer is written back to the list
                         st.session_state.interview_qa[i]['answer'] = answer 
-                        st.markdown("---") # Visual separator between questions
+                        st.markdown("---") 
                         
-                    # Submission button
                     submit_button = st.form_submit_button("Submit & Evaluate Answers", use_container_width=True)
 
                     if submit_button:
                         
-                        # Check if all answers are filled
                         if all(item['answer'].strip() for item in st.session_state.interview_qa):
                             with st.spinner("Sending answers to AI Evaluator..."):
                                 try:
@@ -1730,12 +1728,11 @@ def candidate_dashboard():
                         else:
                             st.error("Please answer all generated questions before submitting.")
                 
-                # Display Evaluation Report
                 if st.session_state.get('evaluation_report'):
                     st.markdown("---")
                     st.subheader("3. AI Evaluation Report")
                     st.markdown(st.session_state.evaluation_report)
-                    
+
     # --- TAB 4: JD Management (Candidate) ---
     with tab4:
         st.header("📚 Manage Job Descriptions for Matching")
@@ -1860,7 +1857,7 @@ def candidate_dashboard():
         else:
             st.info("No Job Descriptions added yet.")
 
-    # --- TAB 5: Batch JD Match (Candidate) (FIX 2 APPLIED) ---
+    # --- TAB 5: Batch JD Match (Candidate) ---
     with tab5:
         st.header("🎯 Batch JD Match")
         st.markdown("Compare your current resume against all saved job descriptions.")
@@ -1871,6 +1868,9 @@ def candidate_dashboard():
         elif not st.session_state.candidate_jd_list:
             st.error("Please **add Job Descriptions** in the 'JD Management' tab (Tab 4) before running batch analysis.")
             
+        elif not GROQ_API_KEY:
+             st.error("Cannot use JD Match: GROQ_API_KEY is not configured.")
+             
         else:
             if "candidate_match_results" not in st.session_state:
                 st.session_state.candidate_match_results = []
