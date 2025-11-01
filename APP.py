@@ -11,6 +11,7 @@ import traceback
 import re
 from dotenv import load_dotenv 
 from datetime import date 
+from typing import List, Dict, Union, Any
 
 # Ensure that UploadedFile class is accessible for type checking
 from streamlit.runtime.uploaded_file_manager import UploadedFile
@@ -184,7 +185,12 @@ def parse_with_llm(text, return_type='json'):
                 if isinstance(v, list):
                     for item in v:
                         if item: 
-                            md += f"- {item}\n"
+                            # FIX: Handle potential dicts returned by LLM in a list
+                            if isinstance(item, dict):
+                                item_str = " | ".join(f"{key}: {val}" for key, val in item.items())
+                                md += f"- {item_str}\n"
+                            else:
+                                md += f"- {item}\n"
                 elif isinstance(v, dict):
                     for sub_k, sub_v in v.items():
                         if sub_v:
@@ -397,6 +403,16 @@ Q3: Question text...
 # -------------------------
 # Utility Functions
 # -------------------------
+def convert_to_flat_string(item: Union[str, Dict[str, Any]]) -> str:
+    """Converts a list item (string or dict) into a single display string."""
+    if isinstance(item, dict):
+        # Join key-value pairs for better display
+        return " | ".join(f"{k.replace('_', ' ').title()}: {v}" for k, v in item.items() if v)
+    elif isinstance(item, str):
+        return item
+    else:
+        return str(item)
+
 def dump_to_excel(parsed_json, filename):
     """Dumps parsed JSON data to an Excel file."""
     wb = openpyxl.Workbook()
@@ -419,7 +435,8 @@ def dump_to_excel(parsed_json, filename):
                 if isinstance(content, list):
                     for item in content:
                         if item:
-                            ws.append(["", str(item)])
+                            # Use the robust string converter here too
+                            ws.append(["", convert_to_flat_string(item)])
                 elif isinstance(content, dict):
                     for k, v in content.items():
                         if v:
@@ -1212,7 +1229,9 @@ def generate_cv_html(parsed_data):
                 html_content += '<ul>'
                 for item in v:
                     if item: 
-                        html_content += f"<li>{item}</li>"
+                        # FIX: Use the robust string converter for list items
+                        item_str = convert_to_flat_string(item)
+                        html_content += f"<li>{item_str}</li>"
                 html_content += '</ul>'
             else:
                 html_content += f"<p>{v}</p>"
@@ -1296,8 +1315,13 @@ def cv_management_tab_content():
         st.markdown("---")
         st.subheader("Technical Sections (One Item per Line)")
 
+        # FIX: Convert list of items to a display string, robustly handling dicts
+        def list_to_text_area_string(data_list: List[Union[str, Dict[str, Any]]]) -> str:
+            if not isinstance(data_list, list): return ""
+            return "\n".join([convert_to_flat_string(item) for item in data_list])
+
         # Skills
-        skills_text = "\n".join(st.session_state.cv_form_data.get('skills', []))
+        skills_text = list_to_text_area_string(st.session_state.cv_form_data.get('skills', []))
         new_skills_text = st.text_area(
             "Key Skills (Technical and Soft)", 
             value=skills_text,
@@ -1307,7 +1331,7 @@ def cv_management_tab_content():
         st.session_state.cv_form_data['skills'] = [s.strip() for s in new_skills_text.split('\n') if s.strip()]
         
         # Experience
-        experience_text = "\n".join(st.session_state.cv_form_data.get('experience', []))
+        experience_text = list_to_text_area_string(st.session_state.cv_form_data.get('experience', []))
         new_experience_text = st.text_area(
             "Professional Experience (Job Roles, Companies, Dates, Key Responsibilities)", 
             value=experience_text,
@@ -1317,7 +1341,7 @@ def cv_management_tab_content():
         st.session_state.cv_form_data['experience'] = [e.strip() for e in new_experience_text.split('\n') if e.strip()]
 
         # Education
-        education_text = "\n".join(st.session_state.cv_form_data.get('education', []))
+        education_text = list_to_text_area_string(st.session_state.cv_form_data.get('education', []))
         new_education_text = st.text_area(
             "Education (Degrees, Institutions, Dates)", 
             value=education_text,
@@ -1327,7 +1351,7 @@ def cv_management_tab_content():
         st.session_state.cv_form_data['education'] = [d.strip() for d in new_education_text.split('\n') if d.strip()]
         
         # Certifications
-        certifications_text = "\n".join(st.session_state.cv_form_data.get('certifications', []))
+        certifications_text = list_to_text_area_string(st.session_state.cv_form_data.get('certifications', []))
         new_certifications_text = st.text_area(
             "Certifications (Name, Issuing Body, Date)", 
             value=certifications_text,
@@ -1337,7 +1361,7 @@ def cv_management_tab_content():
         st.session_state.cv_form_data['certifications'] = [c.strip() for c in new_certifications_text.split('\n') if c.strip()]
         
         # Projects
-        projects_text = "\n".join(st.session_state.cv_form_data.get('projects', []))
+        projects_text = list_to_text_area_string(st.session_state.cv_form_data.get('projects', []))
         new_projects_text = st.text_area(
             "Projects (Name, Description, Technologies)", 
             value=projects_text,
@@ -1347,7 +1371,7 @@ def cv_management_tab_content():
         st.session_state.cv_form_data['projects'] = [p.strip() for p in new_projects_text.split('\n') if p.strip()]
         
         # Strengths
-        strength_text = "\n".join(st.session_state.cv_form_data.get('strength', []))
+        strength_text = list_to_text_area_string(st.session_state.cv_form_data.get('strength', []))
         new_strength_text = st.text_area(
             "Strengths / Key Personal Qualities (One per line)", 
             value=strength_text,
@@ -1375,7 +1399,8 @@ def cv_management_tab_content():
             if v:
                 compiled_text += f"{k.replace('_', ' ').title()}:\n"
                 if isinstance(v, list):
-                    compiled_text += "\n".join([f"- {item}" for item in v]) + "\n\n"
+                    # FIX: Use the robust string converter for compilation
+                    compiled_text += "\n".join([f"- {convert_to_flat_string(item)}" for item in v if item]) + "\n\n"
                 else:
                     compiled_text += str(v) + "\n\n"
         st.session_state.full_text = compiled_text
@@ -1437,8 +1462,10 @@ def cv_management_tab_content():
                     elif isinstance(v, list):
                         for item in v:
                             if item: 
+                                # FIX: Use the robust string converter for list items
+                                item_str = convert_to_flat_string(item)
                                 # Use bullet points for list items (Experience, Skills, Projects, etc.)
-                                md += f"- {item}\n"
+                                md += f"- {item_str}\n"
                         md += "\n"
                     else:
                         # Fallback for any other string
