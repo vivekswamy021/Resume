@@ -1548,7 +1548,7 @@ def candidate_dashboard():
     with tab_cv_mgmt:
         cv_management_tab_content()
 
-    # --- TAB 1: Resume Parsing (FIXED: Section 3 Removed) ---
+    # --- TAB 1: Resume Parsing (FIXED: Next Step text removed) ---
     with tab1:
         st.header("Resume Upload and Parsing")
         
@@ -1594,7 +1594,8 @@ def candidate_dashboard():
                         clear_interview_state()
                         
                         st.success(f"✅ Successfully loaded and parsed **{result['name']}**.")
-                        st.info("View, edit, and download the parsed data in the **CV Management** tab.")
+                        # Retaining the info box as a confirmation
+                        st.info("View, edit, and download the parsed data in the **CV Management** tab.") 
                     else:
                         st.error(f"Parsing failed for {file_to_parse.name}: {result['error']}")
                         st.session_state.parsed = {"error": result['error'], "name": file_to_parse.name}
@@ -1605,10 +1606,8 @@ def candidate_dashboard():
             
         st.markdown("---")
             
-        # --- REMOVED SECTION 3 (View Parsed Data) ---
-        if st.session_state.get('parsed', {}).get('name'):
-            st.markdown("### Next Step")
-            st.markdown("Your resume is loaded! Head over to the **CV Management** tab to **view, edit, and download** your parsed data.")
+        # The 'Next Step' promotional text block is now entirely removed.
+
 
     # --- TAB 2: Resume Chatbot (Q&A) ---
     with tab2:
@@ -1637,7 +1636,7 @@ def candidate_dashboard():
             if st.session_state.get('qa_answer'):
                 st.text_area("Answer", st.session_state.qa_answer, height=150)
 
-    # --- TAB 3: Interview Prep ---
+    # --- TAB 3: Interview Prep (UNCHANGED) ---
     with tab3:
         st.header("Interview Preparation Tools")
         if not is_resume_parsed or "error" in st.session_state.parsed:
