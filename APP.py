@@ -1198,11 +1198,11 @@ def generate_cv_html(parsed_data):
     for k in section_order:
         v = parsed_data.get(k)
         
+        # Skip contact details already handled
+        if k in ['name', 'email', 'phone', 'linkedin', 'github']: continue 
+
         if v and (isinstance(v, str) and v.strip() or isinstance(v, list) and v):
             
-            # Skip contact details already handled
-            if k in ['name', 'email', 'phone', 'linkedin', 'github']: continue 
-
             html_content += f'<div class="section"><h2>{k.replace("_", " ").title()}</h2>'
             html_content += '<div class="item-list">'
             
@@ -1548,7 +1548,7 @@ def candidate_dashboard():
     with tab_cv_mgmt:
         cv_management_tab_content()
 
-    # --- TAB 1: Resume Parsing (FIXED: Next Step text removed) ---
+    # --- TAB 1: Resume Parsing (FIXED: Confirmation text removed) ---
     with tab1:
         st.header("Resume Upload and Parsing")
         
@@ -1594,8 +1594,7 @@ def candidate_dashboard():
                         clear_interview_state()
                         
                         st.success(f"✅ Successfully loaded and parsed **{result['name']}**.")
-                        # Retaining the info box as a confirmation
-                        st.info("View, edit, and download the parsed data in the **CV Management** tab.") 
+                        # --- REMOVED LINE HERE: st.info("View, edit, and download the parsed data in the **CV Management** tab.") 
                     else:
                         st.error(f"Parsing failed for {file_to_parse.name}: {result['error']}")
                         st.session_state.parsed = {"error": result['error'], "name": file_to_parse.name}
@@ -1606,8 +1605,6 @@ def candidate_dashboard():
             
         st.markdown("---")
             
-        # The 'Next Step' promotional text block is now entirely removed.
-
 
     # --- TAB 2: Resume Chatbot (Q&A) ---
     with tab2:
